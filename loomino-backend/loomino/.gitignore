@@ -1,0 +1,28 @@
+# Environment variables -- NEVER commit real secrets (SECRET_KEY, DB
+# password, email credentials). Only .env.example (checked in on
+# purpose) should ever be tracked.
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# Django
+*.sqlite3
+/staticfiles/
+/media/
+
+# Editor/OS
+.vscode/
+.idea/
+.DS_Store

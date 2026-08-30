@@ -1,0 +1,24 @@
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+
+import type { AddressInput } from "../types/address";
+import { updateAddress } from "../services/address.service";
+import { ADDRESSES_QUERY_KEY } from "./useAddresses";
+
+export function useUpdateAddress() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      id,
+      payload,
+    }: {
+      id: number;
+      payload: Partial<AddressInput>;
+    }) => updateAddress(id, payload),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ADDRESSES_QUERY_KEY,
+      });
+    },
+  });
+}
