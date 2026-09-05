@@ -216,6 +216,18 @@ class Product(models.Model):
     is_on_sale = models.BooleanField(
     default=False
      )
+
+    # This row is now generated/kept in sync from a POS product rather
+    # than created directly -- see core.stock_service and the POS
+    # product create/update flow. Null only for legacy/admin-panel rows.
+    pos_source = models.OneToOneField(
+        "pos.POSProduct",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="storefront_product",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -296,6 +308,17 @@ class ProductVariant(models.Model):
     )
 
     is_active = models.BooleanField(default=True)
+
+    # Stock here is a synced cache, not the source of truth -- see
+    # core.stock_service._sync_storefront_stock. The real, shared
+    # quantity lives in pos.StockLevel at the online-channel Location.
+    pos_source = models.OneToOneField(
+        "pos.POSVariant",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="storefront_variant",
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

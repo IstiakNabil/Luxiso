@@ -12,10 +12,10 @@ import {
   deleteCustomerGroup,
   importContacts,
 } from "../services/pos.service";
-import type { ContactWritePayload } from "../types/pos";
+import type { ContactType, ContactWritePayload } from "../types/pos";
 
 export function useContacts(
-  type: "customer" | "supplier",
+  type: ContactType | "",
   page: number,
   search: string,
   customerGroup?: number,

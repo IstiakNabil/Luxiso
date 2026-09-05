@@ -14,8 +14,8 @@ urlpatterns = [
     path("<int:pk>/", ProductDetailView.as_view(), name="pos-products-detail"),
     path("units/", include("pos.urls.units")),
     path("", include("pos.urls.lookups")),
+    path("variations/", include("pos.urls.variations")),
     # Future Products sub-pages mount here:
-    # path("variations/", include("pos.urls.variations")),
     # path("import/", include("pos.urls.product_import")),
     # path("price-groups/", include("pos.urls.price_groups")),
     # path("warranties/", include("pos.urls.warranties")),

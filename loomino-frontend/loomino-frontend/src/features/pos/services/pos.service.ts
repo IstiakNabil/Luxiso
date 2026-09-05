@@ -18,6 +18,7 @@ import type {
   UpdateStaffPayload,
   RoleReference,
   ContactRow,
+  ContactType,
   ContactDetail,
   ContactWritePayload,
   CustomerGroup,
@@ -27,9 +28,15 @@ import type {
   Category,
   Brand,
   TaxRate,
+  StorefrontCategory,
+  StorefrontProductType,
+  ColorOption,
+  SizeOption,
   ProductRow,
   ProductDetail,
   ProductFilters,
+  VariationRow,
+  VariationWritePayload,
   VariantSearchResult,
   PurchaseListRow,
   PurchaseDetail,
@@ -209,14 +216,14 @@ export async function getRolesReference(): Promise<RoleReference[]> {
 
 export async function getContacts(
   page: number,
-  type: "customer" | "supplier",
+  type: ContactType | "",
   search?: string,
   customerGroup?: number,
 ): Promise<Paginated<ContactRow>> {
   const res = await api.get("/pos/contacts/", {
     params: {
       page,
-      type,
+      ...(type ? { type } : {}),
       ...(search ? { search } : {}),
       ...(customerGroup ? { customer_group: customerGroup } : {}),
     },
@@ -387,6 +394,83 @@ export async function createTaxRate(payload: { name: string; rate: string }): Pr
   return res.data;
 }
 
+// --- Storefront lookups -- these hit the public /products/ endpoints,
+// the same ones the website itself uses, so a color/size/category
+// picked here is guaranteed to exist for the storefront to render.
+
+export async function getStorefrontCategories(): Promise<StorefrontCategory[]> {
+  const res = await api.get("/pos/products/storefront-categories/");
+  return res.data;
+}
+export async function createStorefrontCategory(payload: {
+  name: string;
+}): Promise<StorefrontCategory> {
+  const res = await api.post("/pos/products/storefront-categories/", payload);
+  return res.data;
+}
+
+export async function getStorefrontTypes(categoryId?: number): Promise<StorefrontProductType[]> {
+  const res = await api.get("/pos/products/storefront-types/", {
+    params: categoryId ? { category: categoryId } : {},
+  });
+  return res.data;
+}
+export async function createStorefrontType(payload: {
+  name: string;
+  categories?: number[];
+}): Promise<StorefrontProductType> {
+  const res = await api.post("/pos/products/storefront-types/", payload);
+  return res.data;
+}
+
+// Colors/Sizes are managed from POS (CanEditProducts), not the
+// storefront's own is_staff-gated admin -- these write to the same
+// products.Color/Size tables the storefront reads from, same
+// pattern as Category/Brand/TaxRate above.
+export async function getColors(): Promise<ColorOption[]> {
+  const res = await api.get("/pos/products/colors/");
+  return res.data;
+}
+export async function createColor(payload: {
+  name: string;
+  hex_code: string;
+}): Promise<ColorOption> {
+  const res = await api.post("/pos/products/colors/", payload);
+  return res.data;
+}
+export async function updateColor(
+  id: number,
+  payload: Partial<{ name: string; hex_code: string; is_active: boolean }>,
+): Promise<ColorOption> {
+  const res = await api.patch(`/pos/products/colors/${id}/`, payload);
+  return res.data;
+}
+export async function deleteColor(id: number): Promise<void> {
+  await api.delete(`/pos/products/colors/${id}/`);
+}
+
+export async function getSizes(): Promise<SizeOption[]> {
+  const res = await api.get("/pos/products/sizes/");
+  return res.data;
+}
+export async function createSize(payload: {
+  name: string;
+  display_order?: number;
+}): Promise<SizeOption> {
+  const res = await api.post("/pos/products/sizes/", payload);
+  return res.data;
+}
+export async function updateSize(
+  id: number,
+  payload: Partial<{ name: string; display_order: number; is_active: boolean }>,
+): Promise<SizeOption> {
+  const res = await api.patch(`/pos/products/sizes/${id}/`, payload);
+  return res.data;
+}
+export async function deleteSize(id: number): Promise<void> {
+  await api.delete(`/pos/products/sizes/${id}/`);
+}
+
 // --- Products -------------------------------------------------------
 
 function buildProductParams(page: number, filters?: ProductFilters) {
@@ -441,6 +525,30 @@ export async function updateProduct(id: number, formData: FormData): Promise<Pro
 
 export async function deleteProduct(id: number): Promise<void> {
   await api.delete(`/pos/products/${id}/`);
+}
+
+// --- Variations (add/edit variants on an existing product) ----------
+
+export async function getVariations(productId: number): Promise<VariationRow[]> {
+  const res = await api.get("/pos/products/variations/", { params: { product: productId } });
+  return res.data;
+}
+
+export async function createVariation(payload: VariationWritePayload): Promise<VariationRow> {
+  const res = await api.post("/pos/products/variations/", payload);
+  return res.data;
+}
+
+export async function updateVariation(
+  id: number,
+  payload: Partial<VariationWritePayload>,
+): Promise<VariationRow> {
+  const res = await api.patch(`/pos/products/variations/${id}/`, payload);
+  return res.data;
+}
+
+export async function deleteVariation(id: number): Promise<void> {
+  await api.delete(`/pos/products/variations/${id}/`);
 }
 
 // --- Products: variant search (used by Add Purchase / future Add Sale) ---

@@ -23,6 +23,7 @@ function LocationFormModal({ mode, location, onClose }: LocationFormModalProps) 
   const [phone, setPhone] = useState(location?.phone ?? "");
   const [address, setAddress] = useState(location?.address ?? "");
   const [isActive, setIsActive] = useState(location?.is_active ?? true);
+  const [isOnlineChannel, setIsOnlineChannel] = useState(location?.is_online_channel ?? false);
 
   const createMutation = useCreateBusinessLocation();
   const updateMutation = useUpdateBusinessLocation();
@@ -44,6 +45,7 @@ function LocationFormModal({ mode, location, onClose }: LocationFormModalProps) 
       phone,
       address,
       is_active: isActive,
+      is_online_channel: isOnlineChannel,
     };
     try {
       if (mode === "add") {
@@ -147,6 +149,21 @@ function LocationFormModal({ mode, location, onClose }: LocationFormModalProps) 
             Active
           </label>
         )}
+        <label className="flex flex-col gap-1 text-[13px] text-[#221F35] md:col-span-2">
+          <span className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={isOnlineChannel}
+              onChange={(e) => setIsOnlineChannel(e.target.checked)}
+              className="h-4 w-4 rounded border-[#C9C4E8] accent-[#7C6AE8]"
+            />
+            This is the online store's location
+          </span>
+          <span className="pl-6 text-[12px] text-[#A8A2C9]">
+            Only one location can be the online channel — checking this here will
+            automatically uncheck it on whichever location has it now.
+          </span>
+        </label>
       </div>
       <div className="mt-4 flex justify-end gap-2">
         <button

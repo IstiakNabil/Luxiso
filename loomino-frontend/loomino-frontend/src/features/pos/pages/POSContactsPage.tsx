@@ -9,6 +9,8 @@ import {
   useContactDetail,
   useDeleteContact,
 } from "../hooks/useContacts";
+import { getContacts } from "../services/pos.service";
+import { fetchAllPages } from "../utils/exportHelpers";
 import DataTableShell from "../components/DataTableShell";
 import ContactFormModal from "../components/ContactFormModal";
 import { formatMoney } from "../utils/format";
@@ -34,7 +36,7 @@ function POSContactsPage() {
   const [editId, setEditId] = useState<number | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
 
-  const listQuery = useContacts(page, search, type);
+  const listQuery = useContacts(type, page, search);
   const editDetailQuery = useContactDetail(editId);
   const deleteMutation = useDeleteContact();
 
@@ -109,6 +111,8 @@ function POSContactsPage() {
         onPageChange={setPage}
         rowKey={(row) => row.id}
         emptyLabel="No contacts yet — click Add to get started."
+        filenameBase="contacts"
+        fetchAll={() => fetchAllPages((p) => getContacts(p, type, search || undefined))}
         columns={[
           { header: "Code", render: (row) => row.contact_code },
           { header: "Name", render: (row) => row.name },

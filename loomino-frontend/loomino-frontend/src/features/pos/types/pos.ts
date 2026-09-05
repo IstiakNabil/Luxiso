@@ -294,6 +294,32 @@ export interface TaxRate {
   is_active: boolean;
 }
 
+// --- Storefront lookups (shared with the online store) --------------
+
+export interface StorefrontCategory {
+  id: number;
+  name: string;
+  is_active: boolean;
+}
+
+export interface StorefrontProductType {
+  id: number;
+  name: string;
+  categories: number[];
+  is_active: boolean;
+}
+
+export interface ColorOption {
+  id: number;
+  name: string;
+  hex_code: string;
+}
+
+export interface SizeOption {
+  id: number;
+  name: string;
+}
+
 // --- Products -----------------------------------------------------
 
 export type ProductType = "Single" | "Variable";
@@ -325,10 +351,27 @@ export interface ProductRow {
 export interface ProductVariantDetail {
   id: number;
   variant_name: string;
+  size: number | null;
+  size_name: string | null;
+  color: number | null;
+  color_name: string | null;
   sku: string;
   purchase_price: string;
   selling_price: string;
   alert_quantity: string | null;
+}
+
+export interface POSProductImageRow {
+  id: number;
+  image_url: string | null;
+  image_type: "cover" | "hover" | "gallery";
+  display_order: number;
+}
+
+export interface POSProductFeatureRow {
+  id: number;
+  feature: string;
+  display_order: number;
 }
 
 export type BarcodeType = "c128" | "c39" | "ean13" | "ean8" | "upca" | "upce";
@@ -361,6 +404,23 @@ export interface ProductDetail {
   is_active: boolean;
   variants: ProductVariantDetail[];
   created_at: string;
+  // Online storefront fields
+  slug: string | null;
+  publish_online: boolean;
+  storefront_category: number | null;
+  storefront_type: number | null;
+  short_description: string;
+  fitting: string;
+  fabric_and_care: string;
+  shipping_and_return: string;
+  is_featured: boolean;
+  is_new_arrival: boolean;
+  is_on_sale: boolean;
+  online_discount_price: string | null;
+  gallery_images: POSProductImageRow[];
+  features: POSProductFeatureRow[];
+  is_published_online: boolean;
+  publish_warning?: string;
 }
 
 export interface ProductFilters {
@@ -376,10 +436,44 @@ export interface ProductFilters {
 
 export interface VariantInput {
   variant_name: string;
+  color?: number | "";
+  size?: number | "";
   sku?: string;
   purchase_price: string;
   selling_price: string;
   alert_quantity?: string;
+}
+
+// --- Variations page (add/edit variants on an existing product) -----
+
+export interface VariationRow {
+  id: number;
+  product: number;
+  variant_name: string;
+  color: number | null;
+  color_name: string | null;
+  size: number | null;
+  size_name: string | null;
+  sku: string;
+  barcode: string | null;
+  purchase_price: string;
+  selling_price: string;
+  alert_quantity: string | null;
+  is_active: boolean;
+  total_stock: string;
+  publish_warning?: string;
+}
+
+export interface VariationWritePayload {
+  product?: number;
+  variant_name?: string;
+  color?: number | "";
+  size?: number | "";
+  sku?: string;
+  purchase_price?: string;
+  selling_price?: string;
+  alert_quantity?: string;
+  is_active?: boolean;
 }
 
 // --- Purchases ------------------------------------------------------
@@ -1057,6 +1151,7 @@ export interface BusinessLocation {
   address: string;
   phone: string;
   is_active: boolean;
+  is_online_channel: boolean;
 }
 
 export interface DocumentPrefixRow {

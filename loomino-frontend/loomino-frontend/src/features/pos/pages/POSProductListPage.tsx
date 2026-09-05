@@ -276,6 +276,12 @@ function POSProductListPage() {
                       >
                         <Pencil size={12} /> Edit
                       </Link>
+                      <Link
+                        to={`/admin/pos/products/variations?product=${row.id}`}
+                        className="flex items-center gap-1 rounded-md border border-[#E7E4F3] px-2.5 py-1 text-[12px] font-medium text-[#726C8C] hover:bg-[#F5F4FA]"
+                      >
+                        Variants
+                      </Link>
                       <button
                         type="button"
                         onClick={() => setConfirmDeleteId(row.id)}

@@ -18,6 +18,8 @@ from .units import Unit
 from .lookups import Category, Brand, TaxRate
 from .catalog import (
     POSProduct,
+    POSProductImage,
+    POSProductFeature,
     POSVariant,
     Batch,
     StockLevel,
@@ -63,6 +65,8 @@ __all__ = [
     "Brand",
     "TaxRate",
     "POSProduct",
+    "POSProductImage",
+    "POSProductFeature",
     "POSVariant",
     "Batch",
     "StockLevel",

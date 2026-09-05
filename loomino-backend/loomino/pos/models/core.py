@@ -145,11 +145,26 @@ class Location(models.Model):
     phone = models.CharField(max_length=20, blank=True)
     is_active = models.BooleanField(default=True)
 
+    is_online_channel = models.BooleanField(
+        default=False,
+        help_text=(
+            "The single location whose stock the online storefront reads "
+            "from and sells against. Only one per business."
+        ),
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["business"],
+                condition=models.Q(is_online_channel=True),
+                name="one_online_channel_per_business",
+            )
+        ]
 
     def __str__(self):
         return self.name

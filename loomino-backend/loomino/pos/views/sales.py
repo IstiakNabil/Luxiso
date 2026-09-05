@@ -14,9 +14,10 @@ from rest_framework.response import Response
 
 from ..models import (
     Sale, SaleItem, SaleStatus, SaleReturn, SaleReturnItem,
-    PaymentStatus, PaymentMethod, DiscountType, POSVariant, StockLevel, StockMovement, StockMovementType,
+    PaymentStatus, PaymentMethod, DiscountType, POSVariant, StockMovementType,
     SalePayment,
 )
+from core.stock_service import deduct_stock, restock, InsufficientStockError
 from ..pagination import POSResultsPagination
 from ..permissions import IsPOSStaff, CanSell, IsPOSAdminOrManager
 from ..serializers.sales import (
@@ -143,17 +144,6 @@ class SaleListCreateView(GenericAPIView):
                     discount_amount = _to_decimal(row.get("discount_amount"), "0")
                     line_subtotal = quantity * unit_price - discount_amount
 
-                    if sale_status in STOCK_MOVING_STATUSES:
-                        stock_level = StockLevel.objects.filter(
-                            variant=variant, location=sale.location
-                        ).first()
-                        current_qty = stock_level.quantity if stock_level else Decimal("0")
-                        if quantity > current_qty:
-                            raise ValueError(
-                                f"Can't sell {quantity} of {variant} -- only {current_qty} "
-                                f"in stock at {sale.location.name}."
-                            )
-
                     SaleItem.objects.create(
                         sale=sale,
                         variant=variant,
@@ -166,19 +156,19 @@ class SaleListCreateView(GenericAPIView):
                     total_quantity += quantity
 
                     if sale_status in STOCK_MOVING_STATUSES:
-                        stock_level.quantity -= quantity
-                        stock_level.save(update_fields=["quantity"])
-
-                        StockMovement.objects.create(
-                            variant=variant,
-                            location=sale.location,
-                            movement_type=StockMovementType.SALE,
-                            quantity=quantity,
-                            reference_type="sale",
-                            reference_id=sale.id,
-                            note=f"Sale {sale.invoice_no}",
-                            created_by=request.user,
-                        )
+                        try:
+                            deduct_stock(
+                                variant=variant,
+                                location=sale.location,
+                                quantity=quantity,
+                                movement_type=StockMovementType.SALE,
+                                reference_type="sale",
+                                reference_id=sale.id,
+                                note=f"Sale {sale.invoice_no}",
+                                created_by=request.user,
+                            )
+                        except InsufficientStockError as e:
+                            raise ValueError(str(e))
 
                 if sale.discount_type == DiscountType.PERCENTAGE:
                     discount = subtotal * sale.discount_amount / 100
@@ -374,17 +364,11 @@ class SaleReturnListView(GenericAPIView):
                     )
                     total += line_total
 
-                    stock_level, _ = StockLevel.objects.get_or_create(
-                        variant=variant, location=sale.location
-                    )
-                    stock_level.quantity += quantity
-                    stock_level.save(update_fields=["quantity"])
-
-                    StockMovement.objects.create(
+                    restock(
                         variant=variant,
                         location=sale.location,
-                        movement_type=StockMovementType.SALE_RETURN,
                         quantity=quantity,
+                        movement_type=StockMovementType.SALE_RETURN,
                         reference_type="sale_return",
                         reference_id=sale_return.id,
                         note=f"Return against {sale.invoice_no}",

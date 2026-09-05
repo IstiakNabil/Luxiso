@@ -62,7 +62,6 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -142,22 +141,8 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
-STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
-
-# Serves static files directly from gunicorn/whitenoise as a
-# fallback, even though nginx is the primary static-file server in
-# the docker-compose setup -- one less thing that can go wrong on a
-# first deployment if the nginx volume mapping isn't quite right yet.
-STORAGES = {
-    "default": {
-        "BACKEND": "django.core.files.storage.FileSystemStorage",
-    },
-    "staticfiles": {
-        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
-    },
-}
 
 AUTH_USER_MODEL = "accounts.User"
 
@@ -250,35 +235,8 @@ SPECTACULAR_SETTINGS = {
         }
     },
 }
-CORS_ALLOWED_ORIGINS = config(
-    "CORS_ALLOWED_ORIGINS",
-    default="http://localhost:5173",
-).split(",")
-
-# Needed specifically for Django's own built-in admin login (session +
-# CSRF-cookie based), which is a different auth mechanism from the
-# JWT bearer tokens the API/React app use. Without this, logging into
-# /django-admin/ over HTTPS behind a reverse proxy (Render, nginx,
-# etc.) fails with "CSRF verification failed" even though the login
-# credentials are correct. Comma-separated, each entry needs its
-# scheme, e.g. "https://loomino-backend.onrender.com".
-CSRF_TRUSTED_ORIGINS = [
-    origin for origin in config("CSRF_TRUSTED_ORIGINS", default="").split(",") if origin
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
 ]
-
-# Render (and most platforms-as-a-service) terminate HTTPS at a proxy
-# in front of the app and forward plain HTTP internally, adding this
-# header so Django knows the original request was secure. Without it,
-# Django thinks every request is plain HTTP and secure-cookie/HSTS
-# logic never engages.
-SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-
-# Only enforced when DEBUG=False, so local `runserver` over plain
-# http:// during development is never affected -- these three matter
-# once the site is actually reachable over HTTPS (Render, or any
-# reverse-proxy deployment), per Django's own --deploy checklist.
-SESSION_COOKIE_SECURE = not DEBUG
-CSRF_COOKIE_SECURE = not DEBUG
-SECURE_SSL_REDIRECT = not DEBUG
 
 

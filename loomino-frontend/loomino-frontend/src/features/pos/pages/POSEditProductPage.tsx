@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { Upload } from "lucide-react";
+import { Upload, Plus, Trash2 } from "lucide-react";
 
 import { getApiErrorMessage } from "@/lib/apiError";
 import {
@@ -11,8 +11,12 @@ import {
   useAllUnits,
   useProductDetail,
   useUpdateProduct,
+  useStorefrontCategories,
+  useStorefrontTypes,
 } from "../hooks/useProducts";
-import type { ProductDetail } from "../types/pos";
+import StorefrontCategoryFormModal from "../components/StorefrontCategoryFormModal";
+import StorefrontTypeFormModal from "../components/StorefrontTypeFormModal";
+import type { ProductDetail, StorefrontCategory, StorefrontProductType } from "../types/pos";
 
 function Field({
   label,
@@ -96,6 +100,7 @@ function EditProductForm({ product }: { product: ProductDetail }) {
   const taxRatesQuery = useTaxRates();
   const unitsQuery = useAllUnits();
   const updateMutation = useUpdateProduct();
+  const storefrontCategoriesQuery = useStorefrontCategories();
 
   const [name, setName] = useState(product.name);
   const [categoryId, setCategoryId] = useState<number | "">(product.category ?? "");
@@ -112,6 +117,58 @@ function EditProductForm({ product }: { product: ProductDetail }) {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(product.image_url);
 
+  // --- Online storefront ---------------------------------------
+  const [publishOnline, setPublishOnline] = useState(product.publish_online);
+  const [storefrontCategoryId, setStorefrontCategoryId] = useState<number | "">(
+    product.storefront_category ?? "",
+  );
+  const [storefrontTypeId, setStorefrontTypeId] = useState<number | "">(
+    product.storefront_type ?? "",
+  );
+  const [shortDescription, setShortDescription] = useState(product.short_description);
+  const [fitting, setFitting] = useState(product.fitting);
+  const [fabricAndCare, setFabricAndCare] = useState(product.fabric_and_care);
+  const [shippingAndReturn, setShippingAndReturn] = useState(product.shipping_and_return);
+  const [isFeatured, setIsFeatured] = useState(product.is_featured);
+  const [isNewArrival, setIsNewArrival] = useState(product.is_new_arrival);
+  const [isOnSale, setIsOnSale] = useState(product.is_on_sale);
+  const [onlineDiscountPrice, setOnlineDiscountPrice] = useState(
+    product.online_discount_price ?? "",
+  );
+  const [coverImageFile, setCoverImageFile] = useState<File | null>(null);
+  const [hoverImageFile, setHoverImageFile] = useState<File | null>(null);
+  const [galleryFiles, setGalleryFiles] = useState<File[]>([]);
+  const [features, setFeatures] = useState<string[]>(
+    product.features.length ? product.features.map((f) => f.feature) : [""],
+  );
+  const [quickAddStorefrontCategory, setQuickAddStorefrontCategory] = useState(false);
+  const [quickAddStorefrontType, setQuickAddStorefrontType] = useState(false);
+
+  const storefrontTypesQuery = useStorefrontTypes(
+    storefrontCategoryId ? storefrontCategoryId : undefined,
+  );
+
+  const updateFeature = (index: number, value: string) =>
+    setFeatures((prev) => prev.map((f, i) => (i === index ? value : f)));
+  const addFeatureRow = () => setFeatures((prev) => [...prev, ""]);
+  const removeFeatureRow = (index: number) =>
+    setFeatures((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== index) : prev));
+
+  const handleGalleryFilesChange = (fileList: FileList | null) => {
+    if (!fileList) return;
+    setGalleryFiles((prev) => [...prev, ...Array.from(fileList)]);
+  };
+  const removeGalleryFile = (index: number) =>
+    setGalleryFiles((prev) => prev.filter((_, i) => i !== index));
+
+  const handleStorefrontCategoryCreated = (category: StorefrontCategory) => {
+    setStorefrontCategoryId(category.id);
+    setStorefrontTypeId("");
+  };
+  const handleStorefrontTypeCreated = (type: StorefrontProductType) => {
+    setStorefrontTypeId(type.id);
+  };
+
   const handleImageChange = (file: File | null) => {
     setImageFile(file);
     if (file) setImagePreview(URL.createObjectURL(file));
@@ -120,6 +177,10 @@ function EditProductForm({ product }: { product: ProductDetail }) {
   const handleSubmit = async () => {
     if (!name.trim()) {
       toast.error("Product name is required.");
+      return;
+    }
+    if (publishOnline && !storefrontCategoryId) {
+      toast.error("Choose a storefront category to publish this product online.");
       return;
     }
 
@@ -138,9 +199,33 @@ function EditProductForm({ product }: { product: ProductDetail }) {
     formData.append("is_active", String(isActive));
     if (imageFile) formData.append("image", imageFile);
 
+    // Online storefront fields
+    formData.append("publish_online", String(publishOnline));
+    if (storefrontCategoryId) formData.append("storefront_category", String(storefrontCategoryId));
+    if (storefrontTypeId) formData.append("storefront_type", String(storefrontTypeId));
+    formData.append("short_description", shortDescription);
+    formData.append("fitting", fitting);
+    formData.append("fabric_and_care", fabricAndCare);
+    formData.append("shipping_and_return", shippingAndReturn);
+    formData.append("is_featured", String(isFeatured));
+    formData.append("is_new_arrival", String(isNewArrival));
+    formData.append("is_on_sale", String(isOnSale));
+    if (onlineDiscountPrice) formData.append("online_discount_price", onlineDiscountPrice);
+    formData.append(
+      "features",
+      JSON.stringify(features.map((f) => f.trim()).filter(Boolean)),
+    );
+    if (coverImageFile) formData.append("cover_image", coverImageFile);
+    if (hoverImageFile) formData.append("hover_image", hoverImageFile);
+    galleryFiles.forEach((f) => formData.append("gallery_images", f));
+
     try {
-      await updateMutation.mutateAsync({ id: product.id, formData });
-      toast.success("Product updated.");
+      const updated = await updateMutation.mutateAsync({ id: product.id, formData });
+      if (updated.publish_warning) {
+        toast.warning(`Saved, but not published online yet: ${updated.publish_warning}`);
+      } else {
+        toast.success("Product updated.");
+      }
       navigate("/admin/pos/products/list");
     } catch (err) {
       toast.error(getApiErrorMessage(err));
@@ -153,6 +238,11 @@ function EditProductForm({ product }: { product: ProductDetail }) {
         <h1 className="text-[20px] font-bold text-[#221F35]">Edit Product</h1>
         <p className="text-[13px] text-[#726C8C]">
           SKU {product.sku} · {product.product_type}
+          {product.is_published_online && (
+            <span className="ml-2 rounded-full bg-[#E6F7EC] px-2.5 py-0.5 text-[11px] font-medium text-[#2E9E5B]">
+              Live Online
+            </span>
+          )}
         </p>
       </div>
 
@@ -224,6 +314,248 @@ function EditProductForm({ product }: { product: ProductDetail }) {
       </div>
 
       <div className="rounded-2xl border border-[#E7E4F3] bg-white p-5">
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-[14px] font-semibold text-[#221F35]">Online Storefront</h3>
+          <label className="flex items-center gap-2 text-[13px] font-medium text-[#221F35]">
+            <input
+              type="checkbox"
+              checked={publishOnline}
+              onChange={(e) => setPublishOnline(e.target.checked)}
+              className="h-4 w-4 rounded border-[#C9C4E8] accent-[#7C6AE8]"
+            />
+            Publish Online
+          </label>
+        </div>
+
+        {publishOnline && (
+          <>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div className="flex items-end gap-2">
+                <div className="flex-1">
+                  <Select
+                    label="Storefront Category"
+                    value={storefrontCategoryId}
+                    onChange={(v) => { setStorefrontCategoryId(v); setStorefrontTypeId(""); }}
+                    options={storefrontCategoriesQuery.data ?? []}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setQuickAddStorefrontCategory(true)}
+                  className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-lg bg-[#7C6AE8] text-white hover:bg-[#6C5AD8]"
+                  title="Add new storefront category"
+                >
+                  <Plus size={16} />
+                </button>
+              </div>
+              <div className="flex items-end gap-2">
+                <div className="flex-1">
+                  <Select
+                    label="Storefront Type"
+                    value={storefrontTypeId}
+                    onChange={setStorefrontTypeId}
+                    options={storefrontTypesQuery.data ?? []}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setQuickAddStorefrontType(true)}
+                  className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-lg bg-[#7C6AE8] text-white hover:bg-[#6C5AD8]"
+                  title="Add new storefront type"
+                >
+                  <Plus size={16} />
+                </button>
+              </div>
+              <Field
+                label="Online Discount Price"
+                value={onlineDiscountPrice}
+                onChange={setOnlineDiscountPrice}
+                type="number"
+              />
+            </div>
+
+            <div className="mt-4">
+              <Field label="Short Description" value={shortDescription} onChange={setShortDescription} />
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div>
+                <span className="mb-1.5 block text-[13px] font-medium text-[#4A4470]">Fitting</span>
+                <textarea
+                  value={fitting}
+                  onChange={(e) => setFitting(e.target.value)}
+                  rows={3}
+                  className="w-full rounded-lg border border-[#E7E4F3] px-3 py-2 text-[13px] text-[#221F35] outline-none focus:border-[#7C6AE8]"
+                />
+              </div>
+              <div>
+                <span className="mb-1.5 block text-[13px] font-medium text-[#4A4470]">Fabric &amp; Care</span>
+                <textarea
+                  value={fabricAndCare}
+                  onChange={(e) => setFabricAndCare(e.target.value)}
+                  rows={3}
+                  className="w-full rounded-lg border border-[#E7E4F3] px-3 py-2 text-[13px] text-[#221F35] outline-none focus:border-[#7C6AE8]"
+                />
+              </div>
+              <div>
+                <span className="mb-1.5 block text-[13px] font-medium text-[#4A4470]">Shipping &amp; Return</span>
+                <textarea
+                  value={shippingAndReturn}
+                  onChange={(e) => setShippingAndReturn(e.target.value)}
+                  rows={3}
+                  className="w-full rounded-lg border border-[#E7E4F3] px-3 py-2 text-[13px] text-[#221F35] outline-none focus:border-[#7C6AE8]"
+                />
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-center gap-6">
+              <label className="flex items-center gap-2 text-[13px] text-[#221F35]">
+                <input
+                  type="checkbox"
+                  checked={isFeatured}
+                  onChange={(e) => setIsFeatured(e.target.checked)}
+                  className="h-4 w-4 rounded border-[#C9C4E8] accent-[#7C6AE8]"
+                />
+                Featured
+              </label>
+              <label className="flex items-center gap-2 text-[13px] text-[#221F35]">
+                <input
+                  type="checkbox"
+                  checked={isNewArrival}
+                  onChange={(e) => setIsNewArrival(e.target.checked)}
+                  className="h-4 w-4 rounded border-[#C9C4E8] accent-[#7C6AE8]"
+                />
+                New Arrival
+              </label>
+              <label className="flex items-center gap-2 text-[13px] text-[#221F35]">
+                <input
+                  type="checkbox"
+                  checked={isOnSale}
+                  onChange={(e) => setIsOnSale(e.target.checked)}
+                  className="h-4 w-4 rounded border-[#C9C4E8] accent-[#7C6AE8]"
+                />
+                On Sale
+              </label>
+            </div>
+
+            {product.gallery_images.length > 0 && (
+              <div className="mt-5 border-t border-[#E7E4F3] pt-4">
+                <span className="mb-2 block text-[13px] font-semibold text-[#221F35]">
+                  Current Storefront Images
+                </span>
+                <div className="flex flex-wrap gap-3">
+                  {product.gallery_images.map((img) => (
+                    <div key={img.id} className="flex flex-col items-center gap-1">
+                      <div className="h-16 w-16 overflow-hidden rounded-lg border border-[#E7E4F3] bg-[#F5F4FA]">
+                        {img.image_url && (
+                          <img src={img.image_url} alt={img.image_type} className="h-full w-full object-cover" />
+                        )}
+                      </div>
+                      <span className="text-[11px] text-[#A8A2C9]">{img.image_type}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-2 text-[12px] text-[#A8A2C9]">
+                  Adding new images below appends to this gallery — it doesn't replace it, except
+                  Cover/Hover which are replaced if a new one is uploaded.
+                </p>
+              </div>
+            )}
+
+            <div className="mt-5 border-t border-[#E7E4F3] pt-4">
+              <span className="mb-2 block text-[13px] font-semibold text-[#221F35]">
+                Add Storefront Images
+              </span>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <div>
+                  <span className="mb-1.5 block text-[13px] font-medium text-[#4A4470]">
+                    Cover Image (replaces current)
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => setCoverImageFile(e.target.files?.[0] ?? null)}
+                    className="text-[13px] text-[#3A3560]"
+                  />
+                </div>
+                <div>
+                  <span className="mb-1.5 block text-[13px] font-medium text-[#4A4470]">
+                    Hover Image (replaces current)
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => setHoverImageFile(e.target.files?.[0] ?? null)}
+                    className="text-[13px] text-[#3A3560]"
+                  />
+                </div>
+                <div>
+                  <span className="mb-1.5 block text-[13px] font-medium text-[#4A4470]">
+                    Gallery Images (adds more)
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={(e) => handleGalleryFilesChange(e.target.files)}
+                    className="text-[13px] text-[#3A3560]"
+                  />
+                  {galleryFiles.length > 0 && (
+                    <ul className="mt-2 flex flex-col gap-1">
+                      {galleryFiles.map((f, i) => (
+                        <li key={i} className="flex items-center justify-between text-[12px] text-[#726C8C]">
+                          {f.name}
+                          <button
+                            type="button"
+                            onClick={() => removeGalleryFile(i)}
+                            className="text-[#C24F4F] hover:underline"
+                          >
+                            Remove
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-5 border-t border-[#E7E4F3] pt-4">
+              <span className="mb-2 block text-[13px] font-semibold text-[#221F35]">Features</span>
+              <div className="flex flex-col gap-2">
+                {features.map((feature, index) => (
+                  <div key={index} className="flex items-center gap-2">
+                    <input
+                      value={feature}
+                      onChange={(e) => updateFeature(index, e.target.value)}
+                      placeholder="e.g. 100% cotton"
+                      className="w-full rounded-lg border border-[#E7E4F3] px-3 py-2 text-[13px] text-[#221F35] outline-none focus:border-[#7C6AE8]"
+                    />
+                    {features.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeFeatureRow(index)}
+                        className="shrink-0 text-[#C24F4F] hover:underline"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={addFeatureRow}
+                className="mt-3 flex items-center gap-2 rounded-lg border border-dashed border-[#C9C4E8] px-4 py-2 text-[13px] font-medium text-[#7C6AE8] hover:bg-[#F5F4FA]"
+              >
+                <Plus size={16} /> Add feature
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="rounded-2xl border border-[#E7E4F3] bg-white p-5">
         <h3 className="mb-3 text-[14px] font-semibold text-[#221F35]">Variants</h3>
         <p className="mb-3 text-[12px] text-[#A8A2C9]">
           Variant names/pricing and stock adjustments will move to their own Variations and
@@ -232,7 +564,11 @@ function EditProductForm({ product }: { product: ProductDetail }) {
         <div className="flex flex-col divide-y divide-[#F5F4FA]">
           {product.variants.map((v) => (
             <div key={v.id} className="flex items-center justify-between py-2 text-[13px]">
-              <span className="text-[#221F35]">{v.variant_name || "Default"}</span>
+              <span className="text-[#221F35]">
+                {v.variant_name ||
+                  [v.color_name, v.size_name].filter(Boolean).join(" / ") ||
+                  "Default"}
+              </span>
               <span className="text-[#726C8C]">{v.sku}</span>
               <span className="text-[#726C8C]">
                 {v.purchase_price} → {v.selling_price}
@@ -259,6 +595,20 @@ function EditProductForm({ product }: { product: ProductDetail }) {
           {updateMutation.isPending ? "Saving…" : "Save Changes"}
         </button>
       </div>
+
+      {quickAddStorefrontCategory && (
+        <StorefrontCategoryFormModal
+          onClose={() => setQuickAddStorefrontCategory(false)}
+          onCreated={handleStorefrontCategoryCreated}
+        />
+      )}
+      {quickAddStorefrontType && (
+        <StorefrontTypeFormModal
+          defaultCategoryId={storefrontCategoryId}
+          onClose={() => setQuickAddStorefrontType(false)}
+          onCreated={handleStorefrontTypeCreated}
+        />
+      )}
     </div>
   );
 }

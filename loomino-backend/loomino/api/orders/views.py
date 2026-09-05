@@ -17,6 +17,8 @@ from orders.models import Payment
 from orders.emails import send_order_confirmation_email
 from products.models import ProductVariant
 from django.shortcuts import get_object_or_404
+from core.stock_service import deduct_stock, restock, get_online_location, InsufficientStockError
+from pos.models import StockMovementType, Location
 from .serializers import (
     CartItemSerializer,
     AddToCartSerializer,
@@ -414,18 +416,18 @@ class CheckoutAPIView(APIView):
 
                 coupon.save()
 
+            try:
+                online_location = get_online_location()
+            except Location.DoesNotExist:
+                raise serializers.ValidationError(
+                    {"message": "Online ordering isn't configured yet -- please try again shortly."}
+                )
+
             for item in cart.items.all():
 
                 variant = ProductVariant.objects.select_for_update().get(
                     id=item.product_variant.id
                 )
-
-                if variant.stock < item.quantity:
-                    raise serializers.ValidationError(
-                        {
-                            "message": f"{variant.product.name} is out of stock."
-                        }
-                    )
 
                 OrderItem.objects.create(
                     order=order,
@@ -435,8 +437,19 @@ class CheckoutAPIView(APIView):
                     subtotal=variant.selling_price * item.quantity,
                 )
 
-                variant.stock -= item.quantity
-                variant.save()
+                try:
+                    deduct_stock(
+                        variant=variant.pos_source,
+                        location=online_location,
+                        quantity=item.quantity,
+                        movement_type=StockMovementType.SALE,
+                        reference_type="online_order",
+                        reference_id=order.id,
+                        note=f"Order {order.order_number}",
+                        created_by=request.user,
+                    )
+                except InsufficientStockError as e:
+                    raise serializers.ValidationError({"message": str(e)})
 
             Shipment.objects.create(
                 order=order
@@ -557,15 +570,29 @@ class CancelOrderAPIView(APIView):
 
         with transaction.atomic():
 
+            try:
+                online_location = get_online_location()
+            except Location.DoesNotExist:
+                raise serializers.ValidationError(
+                    {"message": "Online ordering isn't configured yet -- please try again shortly."}
+                )
+
             for item in order.items.all():
 
                 variant = ProductVariant.objects.select_for_update().get(
                     id=item.product_variant.id
                 )
 
-                variant.stock += item.quantity
-
-                variant.save()
+                restock(
+                    variant=variant.pos_source,
+                    location=online_location,
+                    quantity=item.quantity,
+                    movement_type=StockMovementType.SALE_RETURN,
+                    reference_type="online_order_cancel",
+                    reference_id=order.id,
+                    note=f"Order {order.order_number} cancelled",
+                    created_by=request.user,
+                )
 
             order.status = "cancelled"
 

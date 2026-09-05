@@ -63,6 +63,8 @@ import POSImportContactsPage from "@/features/pos/pages/POSImportContactsPage";
 import POSUnitsPage from "@/features/pos/pages/POSUnitsPage";
 import POSCategoriesPage from "@/features/pos/pages/POSCategoriesPage";
 import POSBrandsPage from "@/features/pos/pages/POSBrandsPage";
+import POSColorsPage from "@/features/pos/pages/POSColorsPage";
+import POSSizesPage from "@/features/pos/pages/POSSizesPage";
 import POSPrintLabelsPage from "@/features/pos/pages/POSPrintLabelsPage";
 import POSPurchaseListPage from "@/features/pos/pages/POSPurchaseListPage";
 import POSAddPurchasePage from "@/features/pos/pages/POSAddPurchasePage";
@@ -99,6 +101,7 @@ import POSAddPurchaseReturnPage from "@/features/pos/pages/POSAddPurchaseReturnP
 import POSProductListPage from "@/features/pos/pages/POSProductListPage";
 import POSAddProductPage from "@/features/pos/pages/POSAddProductPage";
 import POSEditProductPage from "@/features/pos/pages/POSEditProductPage";
+import POSVariationsPage from "@/features/pos/pages/POSVariationsPage";
 
 export const router = createBrowserRouter([
   {
@@ -339,6 +342,8 @@ export const router = createBrowserRouter([
           { path: "products/units", element: <POSUnitsPage /> },
           { path: "products/categories", element: <POSCategoriesPage /> },
           { path: "products/brands", element: <POSBrandsPage /> },
+          { path: "products/colors", element: <POSColorsPage /> },
+          { path: "products/sizes", element: <POSSizesPage /> },
           { path: "products/print-labels", element: <POSPrintLabelsPage /> },
           { path: "purchases/list", element: <POSPurchaseListPage /> },
           { path: "purchases/add", element: <POSAddPurchasePage /> },
@@ -374,6 +379,7 @@ export const router = createBrowserRouter([
           { path: "settings/prefixes", element: <POSPrefixSettingsPage /> },
           { path: "products/list", element: <POSProductListPage /> },
           { path: "products/add", element: <POSAddProductPage /> },
+          { path: "products/variations", element: <POSVariationsPage /> },
           { path: "products/:id/edit", element: <POSEditProductPage /> },
         ],
       },

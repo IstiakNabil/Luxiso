@@ -11,10 +11,27 @@ import {
   useTaxRates,
   useAllUnits,
   useCreateProduct,
+  useStorefrontCategories,
+  useStorefrontTypes,
+  useColors,
+  useSizes,
 } from "../hooks/useProducts";
 import UnitFormModal from "../components/UnitFormModal";
 import BrandFormModal from "../components/BrandFormModal";
-import type { BarcodeType, VariantInput, Unit, Brand } from "../types/pos";
+import ColorFormModal from "../components/ColorFormModal";
+import SizeFormModal from "../components/SizeFormModal";
+import StorefrontCategoryFormModal from "../components/StorefrontCategoryFormModal";
+import StorefrontTypeFormModal from "../components/StorefrontTypeFormModal";
+import type {
+  BarcodeType,
+  VariantInput,
+  Unit,
+  Brand,
+  ColorOption,
+  SizeOption,
+  StorefrontCategory,
+  StorefrontProductType,
+} from "../types/pos";
 
 const BARCODE_TYPES: { value: BarcodeType; label: string }[] = [
   { value: "c128", label: "Code 128 (C128)" },
@@ -28,7 +45,15 @@ const BARCODE_TYPES: { value: BarcodeType; label: string }[] = [
 type VariantRow = VariantInput;
 
 function emptyVariant(): VariantRow {
-  return { variant_name: "", sku: "", purchase_price: "0", selling_price: "0", alert_quantity: "" };
+  return {
+    variant_name: "",
+    color: "",
+    size: "",
+    sku: "",
+    purchase_price: "0",
+    selling_price: "0",
+    alert_quantity: "",
+  };
 }
 
 function Field({
@@ -112,6 +137,9 @@ function POSAddProductPage() {
   const unitsQuery = useAllUnits();
   const locationsQuery = usePOSLocations();
   const createMutation = useCreateProduct();
+  const storefrontCategoriesQuery = useStorefrontCategories();
+  const colorsQuery = useColors();
+  const sizesQuery = useSizes();
 
   const [name, setName] = useState("");
   const [sku, setSku] = useState("");
@@ -142,6 +170,33 @@ function POSAddProductPage() {
 
   const [quickAddUnit, setQuickAddUnit] = useState(false);
   const [quickAddBrand, setQuickAddBrand] = useState(false);
+  // Which variant row's Color/Size the quick-add modal applies to
+  // once saved -- null means no modal is open.
+  const [colorModalForRow, setColorModalForRow] = useState<number | null>(null);
+  const [sizeModalForRow, setSizeModalForRow] = useState<number | null>(null);
+  const [quickAddStorefrontCategory, setQuickAddStorefrontCategory] = useState(false);
+  const [quickAddStorefrontType, setQuickAddStorefrontType] = useState(false);
+
+  // --- Online storefront ---------------------------------------
+  const [publishOnline, setPublishOnline] = useState(true);
+  const [storefrontCategoryId, setStorefrontCategoryId] = useState<number | "">("");
+  const [storefrontTypeId, setStorefrontTypeId] = useState<number | "">("");
+  const [shortDescription, setShortDescription] = useState("");
+  const [fitting, setFitting] = useState("");
+  const [fabricAndCare, setFabricAndCare] = useState("");
+  const [shippingAndReturn, setShippingAndReturn] = useState("");
+  const [isFeatured, setIsFeatured] = useState(false);
+  const [isNewArrival, setIsNewArrival] = useState(false);
+  const [isOnSale, setIsOnSale] = useState(false);
+  const [onlineDiscountPrice, setOnlineDiscountPrice] = useState("");
+  const [coverImageFile, setCoverImageFile] = useState<File | null>(null);
+  const [hoverImageFile, setHoverImageFile] = useState<File | null>(null);
+  const [galleryFiles, setGalleryFiles] = useState<File[]>([]);
+  const [features, setFeatures] = useState<string[]>([""]);
+
+  const storefrontTypesQuery = useStorefrontTypes(
+    storefrontCategoryId ? storefrontCategoryId : undefined,
+  );
 
   const locations = locationsQuery.data ?? [];
 
@@ -174,6 +229,34 @@ function POSAddProductPage() {
 
   const handleUnitCreated = (unit: Unit) => setUnitId(unit.id);
   const handleBrandCreated = (brand: Brand) => setBrandId(brand.id);
+  const handleColorCreated = (color: ColorOption) => {
+    if (colorModalForRow !== null) updateVariant(colorModalForRow, { color: color.id });
+    setColorModalForRow(null);
+  };
+  const handleSizeCreated = (size: SizeOption) => {
+    if (sizeModalForRow !== null) updateVariant(sizeModalForRow, { size: size.id });
+    setSizeModalForRow(null);
+  };
+  const handleStorefrontCategoryCreated = (category: StorefrontCategory) => {
+    setStorefrontCategoryId(category.id);
+    setStorefrontTypeId("");
+  };
+  const handleStorefrontTypeCreated = (type: StorefrontProductType) => {
+    setStorefrontTypeId(type.id);
+  };
+
+  const updateFeature = (index: number, value: string) =>
+    setFeatures((prev) => prev.map((f, i) => (i === index ? value : f)));
+  const addFeatureRow = () => setFeatures((prev) => [...prev, ""]);
+  const removeFeatureRow = (index: number) =>
+    setFeatures((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== index) : prev));
+
+  const handleGalleryFilesChange = (fileList: FileList | null) => {
+    if (!fileList) return;
+    setGalleryFiles((prev) => [...prev, ...Array.from(fileList)]);
+  };
+  const removeGalleryFile = (index: number) =>
+    setGalleryFiles((prev) => prev.filter((_, i) => i !== index));
 
   const handleSubmit = async () => {
     if (!name.trim()) {
@@ -184,13 +267,23 @@ function POSAddProductPage() {
       toast.error("Unit is required.");
       return;
     }
-    if (hasVariants && variants.some((v) => !v.variant_name.trim())) {
-      toast.error("Every variant needs a name for a Variable product.");
+    if (hasVariants && variants.some((v) => !v.variant_name.trim() && !(v.color && v.size))) {
+      toast.error("Every variant needs a name, or a color and size, for a Variable product.");
+      return;
+    }
+    if (publishOnline && variants.some((v) => !v.color || !v.size)) {
+      toast.error("Every variant needs a color and size to publish online.");
+      return;
+    }
+    if (publishOnline && !storefrontCategoryId) {
+      toast.error("Choose a storefront category to publish this product online.");
       return;
     }
 
     const variantsPayload: VariantInput[] = variants.map((v) => ({
       variant_name: hasVariants ? v.variant_name.trim() : "",
+      color: v.color || undefined,
+      size: v.size || undefined,
       sku: v.sku || undefined,
       purchase_price: v.purchase_price || "0",
       selling_price: v.selling_price || "0",
@@ -223,9 +316,33 @@ function POSAddProductPage() {
     if (imageFile) formData.append("image", imageFile);
     if (brochureFile) formData.append("brochure", brochureFile);
 
+    // Online storefront fields
+    formData.append("publish_online", String(publishOnline));
+    if (storefrontCategoryId) formData.append("storefront_category", String(storefrontCategoryId));
+    if (storefrontTypeId) formData.append("storefront_type", String(storefrontTypeId));
+    formData.append("short_description", shortDescription);
+    formData.append("fitting", fitting);
+    formData.append("fabric_and_care", fabricAndCare);
+    formData.append("shipping_and_return", shippingAndReturn);
+    formData.append("is_featured", String(isFeatured));
+    formData.append("is_new_arrival", String(isNewArrival));
+    formData.append("is_on_sale", String(isOnSale));
+    if (onlineDiscountPrice) formData.append("online_discount_price", onlineDiscountPrice);
+    formData.append(
+      "features",
+      JSON.stringify(features.map((f) => f.trim()).filter(Boolean)),
+    );
+    if (coverImageFile) formData.append("cover_image", coverImageFile);
+    if (hoverImageFile) formData.append("hover_image", hoverImageFile);
+    galleryFiles.forEach((f) => formData.append("gallery_images", f));
+
     try {
-      await createMutation.mutateAsync(formData);
-      toast.success(`${name} added.`);
+      const created = await createMutation.mutateAsync(formData);
+      if (created.publish_warning) {
+        toast.warning(`${name} saved, but not published online yet: ${created.publish_warning}`);
+      } else {
+        toast.success(`${name} added.`);
+      }
       navigate("/admin/pos/products/list");
     } catch (err) {
       toast.error(getApiErrorMessage(err));
@@ -510,13 +627,53 @@ function POSAddProductPage() {
               <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
                 {hasVariants && (
                   <Field
-                    label="Variant Name"
+                    label="Variant Label"
                     value={variant.variant_name}
                     onChange={(v) => updateVariant(index, { variant_name: v })}
-                    placeholder="e.g. Small"
-                    required
+                    placeholder="Optional, e.g. Small Batch"
+                    info="optional if color+size set"
                   />
                 )}
+                <div className="flex items-end gap-2">
+                  <div className="flex-1">
+                    <Select
+                      label="Color"
+                      value={variant.color ?? ""}
+                      onChange={(v) => updateVariant(index, { color: v })}
+                      options={colorsQuery.data ?? []}
+                      placeholder="Select color"
+                      required={publishOnline}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setColorModalForRow(index)}
+                    className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-lg bg-[#7C6AE8] text-white hover:bg-[#6C5AD8]"
+                    title="Add new color"
+                  >
+                    <Plus size={16} />
+                  </button>
+                </div>
+                <div className="flex items-end gap-2">
+                  <div className="flex-1">
+                    <Select
+                      label="Size"
+                      value={variant.size ?? ""}
+                      onChange={(v) => updateVariant(index, { size: v })}
+                      options={sizesQuery.data ?? []}
+                      placeholder="Select size"
+                      required={publishOnline}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSizeModalForRow(index)}
+                    className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-lg bg-[#7C6AE8] text-white hover:bg-[#6C5AD8]"
+                    title="Add new size"
+                  >
+                    <Plus size={16} />
+                  </button>
+                </div>
                 <Field
                   label="SKU"
                   value={variant.sku ?? ""}
@@ -556,6 +713,244 @@ function POSAddProductPage() {
         </p>
       </div>
 
+      {/* Online storefront */}
+      <div className="rounded-2xl border border-[#E7E4F3] bg-white p-5">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <h3 className="text-[14px] font-semibold text-[#221F35]">Online Storefront</h3>
+            <p className="text-[12px] text-[#A8A2C9]">
+              This is the only place products are created — turn this on to also list it on
+              the website, sharing the same stock as POS.
+            </p>
+          </div>
+          <label className="flex items-center gap-2 text-[13px] font-medium text-[#221F35]">
+            <input
+              type="checkbox"
+              checked={publishOnline}
+              onChange={(e) => setPublishOnline(e.target.checked)}
+              className="h-4 w-4 rounded border-[#C9C4E8] accent-[#7C6AE8]"
+            />
+            Publish Online
+          </label>
+        </div>
+
+        {publishOnline && (
+          <>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div className="flex items-end gap-2">
+                <div className="flex-1">
+                  <Select
+                    label="Storefront Category"
+                    value={storefrontCategoryId}
+                    onChange={(v) => { setStorefrontCategoryId(v); setStorefrontTypeId(""); }}
+                    options={storefrontCategoriesQuery.data ?? []}
+                    required
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setQuickAddStorefrontCategory(true)}
+                  className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-lg bg-[#7C6AE8] text-white hover:bg-[#6C5AD8]"
+                  title="Add new storefront category"
+                >
+                  <Plus size={16} />
+                </button>
+              </div>
+              <div className="flex items-end gap-2">
+                <div className="flex-1">
+                  <Select
+                    label="Storefront Type"
+                    value={storefrontTypeId}
+                    onChange={setStorefrontTypeId}
+                    options={storefrontTypesQuery.data ?? []}
+                    placeholder={storefrontCategoryId ? "Please Select" : "Select a category first"}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setQuickAddStorefrontType(true)}
+                  className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-lg bg-[#7C6AE8] text-white hover:bg-[#6C5AD8]"
+                  title="Add new storefront type"
+                >
+                  <Plus size={16} />
+                </button>
+              </div>
+              <Field
+                label="Online Discount Price"
+                value={onlineDiscountPrice}
+                onChange={setOnlineDiscountPrice}
+                type="number"
+                placeholder="Optional"
+                info="shown instead of selling price if set"
+              />
+            </div>
+
+            <div className="mt-4">
+              <Field
+                label="Short Description"
+                value={shortDescription}
+                onChange={setShortDescription}
+                placeholder="One line shown on product listing cards"
+              />
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div>
+                <span className="mb-1.5 block text-[13px] font-medium text-[#4A4470]">Fitting</span>
+                <textarea
+                  value={fitting}
+                  onChange={(e) => setFitting(e.target.value)}
+                  rows={3}
+                  className="w-full rounded-lg border border-[#E7E4F3] px-3 py-2 text-[13px] text-[#221F35] outline-none focus:border-[#7C6AE8]"
+                />
+              </div>
+              <div>
+                <span className="mb-1.5 block text-[13px] font-medium text-[#4A4470]">Fabric &amp; Care</span>
+                <textarea
+                  value={fabricAndCare}
+                  onChange={(e) => setFabricAndCare(e.target.value)}
+                  rows={3}
+                  className="w-full rounded-lg border border-[#E7E4F3] px-3 py-2 text-[13px] text-[#221F35] outline-none focus:border-[#7C6AE8]"
+                />
+              </div>
+              <div>
+                <span className="mb-1.5 block text-[13px] font-medium text-[#4A4470]">Shipping &amp; Return</span>
+                <textarea
+                  value={shippingAndReturn}
+                  onChange={(e) => setShippingAndReturn(e.target.value)}
+                  rows={3}
+                  className="w-full rounded-lg border border-[#E7E4F3] px-3 py-2 text-[13px] text-[#221F35] outline-none focus:border-[#7C6AE8]"
+                />
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-center gap-6">
+              <label className="flex items-center gap-2 text-[13px] text-[#221F35]">
+                <input
+                  type="checkbox"
+                  checked={isFeatured}
+                  onChange={(e) => setIsFeatured(e.target.checked)}
+                  className="h-4 w-4 rounded border-[#C9C4E8] accent-[#7C6AE8]"
+                />
+                Featured
+              </label>
+              <label className="flex items-center gap-2 text-[13px] text-[#221F35]">
+                <input
+                  type="checkbox"
+                  checked={isNewArrival}
+                  onChange={(e) => setIsNewArrival(e.target.checked)}
+                  className="h-4 w-4 rounded border-[#C9C4E8] accent-[#7C6AE8]"
+                />
+                New Arrival
+              </label>
+              <label className="flex items-center gap-2 text-[13px] text-[#221F35]">
+                <input
+                  type="checkbox"
+                  checked={isOnSale}
+                  onChange={(e) => setIsOnSale(e.target.checked)}
+                  className="h-4 w-4 rounded border-[#C9C4E8] accent-[#7C6AE8]"
+                />
+                On Sale
+              </label>
+            </div>
+
+            {/* Gallery images */}
+            <div className="mt-5 border-t border-[#E7E4F3] pt-4">
+              <span className="mb-2 block text-[13px] font-semibold text-[#221F35]">
+                Storefront Images
+              </span>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <div>
+                  <span className="mb-1.5 block text-[13px] font-medium text-[#4A4470]">
+                    Cover Image
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => setCoverImageFile(e.target.files?.[0] ?? null)}
+                    className="text-[13px] text-[#3A3560]"
+                  />
+                </div>
+                <div>
+                  <span className="mb-1.5 block text-[13px] font-medium text-[#4A4470]">
+                    Hover Image
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => setHoverImageFile(e.target.files?.[0] ?? null)}
+                    className="text-[13px] text-[#3A3560]"
+                  />
+                </div>
+                <div>
+                  <span className="mb-1.5 block text-[13px] font-medium text-[#4A4470]">
+                    Gallery Images
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={(e) => handleGalleryFilesChange(e.target.files)}
+                    className="text-[13px] text-[#3A3560]"
+                  />
+                  {galleryFiles.length > 0 && (
+                    <ul className="mt-2 flex flex-col gap-1">
+                      {galleryFiles.map((f, i) => (
+                        <li key={i} className="flex items-center justify-between text-[12px] text-[#726C8C]">
+                          {f.name}
+                          <button
+                            type="button"
+                            onClick={() => removeGalleryFile(i)}
+                            className="text-[#C24F4F] hover:underline"
+                          >
+                            Remove
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Features */}
+            <div className="mt-5 border-t border-[#E7E4F3] pt-4">
+              <span className="mb-2 block text-[13px] font-semibold text-[#221F35]">
+                Features
+              </span>
+              <div className="flex flex-col gap-2">
+                {features.map((feature, index) => (
+                  <div key={index} className="flex items-center gap-2">
+                    <input
+                      value={feature}
+                      onChange={(e) => updateFeature(index, e.target.value)}
+                      placeholder="e.g. 100% cotton"
+                      className="w-full rounded-lg border border-[#E7E4F3] px-3 py-2 text-[13px] text-[#221F35] outline-none focus:border-[#7C6AE8]"
+                    />
+                    {features.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeFeatureRow(index)}
+                        className="shrink-0 text-[#C24F4F] hover:underline"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={addFeatureRow}
+                className="mt-3 flex items-center gap-2 rounded-lg border border-dashed border-[#C9C4E8] px-4 py-2 text-[13px] font-medium text-[#7C6AE8] hover:bg-[#F5F4FA]"
+              >
+                <Plus size={16} /> Add feature
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+
       <div className="flex justify-end gap-2">
         <button
           type="button"
@@ -586,6 +981,25 @@ function POSAddProductPage() {
           mode="add"
           onClose={() => setQuickAddBrand(false)}
           onCreated={handleBrandCreated}
+        />
+      )}
+      {colorModalForRow !== null && (
+        <ColorFormModal onClose={() => setColorModalForRow(null)} onCreated={handleColorCreated} />
+      )}
+      {sizeModalForRow !== null && (
+        <SizeFormModal onClose={() => setSizeModalForRow(null)} onCreated={handleSizeCreated} />
+      )}
+      {quickAddStorefrontCategory && (
+        <StorefrontCategoryFormModal
+          onClose={() => setQuickAddStorefrontCategory(false)}
+          onCreated={handleStorefrontCategoryCreated}
+        />
+      )}
+      {quickAddStorefrontType && (
+        <StorefrontTypeFormModal
+          defaultCategoryId={storefrontCategoryId}
+          onClose={() => setQuickAddStorefrontType(false)}
+          onCreated={handleStorefrontTypeCreated}
         />
       )}
     </div>

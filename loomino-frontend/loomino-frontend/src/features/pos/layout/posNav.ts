@@ -69,9 +69,11 @@ export const POS_NAV: POSNavItem[] = [
       { label: "Units", to: "/admin/pos/products/units" },
       { label: "Categories", to: "/admin/pos/products/categories" },
       { label: "Brands", to: "/admin/pos/products/brands" },
+      { label: "Colors", to: "/admin/pos/products/colors" },
+      { label: "Sizes", to: "/admin/pos/products/sizes" },
       { label: "Print Labels", to: "/admin/pos/products/print-labels" },
+      { label: "Variations", to: "/admin/pos/products/variations" },
       // Rest of this group is added as we build each sub-page:
-      // { label: "Variations", to: "/admin/pos/products/variations" },
       // { label: "Import Products", to: "/admin/pos/products/import" },
       // { label: "Import Opening Stock", to: "/admin/pos/products/import-stock" },
       // { label: "Selling Price Group", to: "/admin/pos/products/price-groups" },

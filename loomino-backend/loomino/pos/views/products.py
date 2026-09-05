@@ -11,9 +11,10 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from ..models import POSProduct, POSVariant, Location, StockLevel, get_document_prefix, DocumentType
+from ..models import POSProduct, POSVariant, POSProductImage, POSProductFeature, Location, StockLevel, get_document_prefix, DocumentType
 from ..pagination import POSResultsPagination
 from ..permissions import IsPOSStaff, CanEditProducts
+from ..services.storefront_sync import sync_product_to_storefront, PublishValidationError
 from ..serializers.products import (
     ProductListSerializer,
     ProductDetailSerializer,
@@ -237,6 +238,7 @@ class ProductListCreateView(GenericAPIView):
         try:
             variants_data = _parse_json_field(request, "variants", [])
             location_ids = _parse_json_field(request, "locations", [])
+            features_data = _parse_json_field(request, "features", [])
         except ValueError as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -245,6 +247,7 @@ class ProductListCreateView(GenericAPIView):
         not_for_selling = _parse_bool(request, "not_for_selling", False)
         manage_stock = _parse_bool(request, "manage_stock", True)
         enable_serial_tracking = _parse_bool(request, "enable_serial_tracking", False)
+        publish_online = _parse_bool(request, "publish_online", True)
 
         if not variants_data:
             return Response(
@@ -258,9 +261,15 @@ class ProductListCreateView(GenericAPIView):
             )
         if has_variants:
             for row in variants_data:
-                if not str(row.get("variant_name", "")).strip():
+                if not str(row.get("variant_name", "")).strip() and not (
+                    row.get("color") and row.get("size")
+                ):
                     return Response(
-                        {"variants": ["Every variant needs a name for a Variable product."]},
+                        {
+                            "variants": [
+                                "Every variant needs a name, or a color and size, for a Variable product."
+                            ]
+                        },
                         status=status.HTTP_400_BAD_REQUEST,
                     )
 
@@ -275,6 +284,7 @@ class ProductListCreateView(GenericAPIView):
                     not_for_selling=not_for_selling,
                     manage_stock=manage_stock,
                     enable_serial_tracking=enable_serial_tracking,
+                    publish_online=publish_online,
                 )
 
                 if not product.sku:
@@ -290,6 +300,8 @@ class ProductListCreateView(GenericAPIView):
                     variant = POSVariant.objects.create(
                         product=product,
                         variant_name=row.get("variant_name", "").strip() if has_variants else "",
+                        color_id=row.get("color") or None,
+                        size_id=row.get("size") or None,
                         sku=row.get("sku") or f"{product.sku}-{len(created_variants) + 1}",
                         purchase_price=_to_decimal(row.get("purchase_price"), "0"),
                         selling_price=_to_decimal(row.get("selling_price"), "0"),
@@ -309,13 +321,51 @@ class ProductListCreateView(GenericAPIView):
                         ],
                         ignore_conflicts=True,
                     )
+
+                # Storefront gallery images -- cover/hover are single
+                # optional files, gallery_images can repeat.
+                image_rows = []
+                if request.FILES.get("cover_image"):
+                    image_rows.append(
+                        POSProductImage(product=product, image=request.FILES["cover_image"], image_type="cover", display_order=0)
+                    )
+                if request.FILES.get("hover_image"):
+                    image_rows.append(
+                        POSProductImage(product=product, image=request.FILES["hover_image"], image_type="hover", display_order=0)
+                    )
+                for i, f in enumerate(request.FILES.getlist("gallery_images")):
+                    image_rows.append(
+                        POSProductImage(product=product, image=f, image_type="gallery", display_order=i)
+                    )
+                if image_rows:
+                    POSProductImage.objects.bulk_create(image_rows)
+
+                POSProductFeature.objects.bulk_create(
+                    [
+                        POSProductFeature(product=product, feature=str(feature).strip(), display_order=i)
+                        for i, feature in enumerate(features_data)
+                        if str(feature).strip()
+                    ]
+                )
         except (ValueError, InvalidOperation) as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-        return Response(
-            ProductDetailSerializer(product, context={"request": request}).data,
-            status=status.HTTP_201_CREATED,
-        )
+        publish_warning = None
+        if publish_online:
+            try:
+                sync_product_to_storefront(product)
+            except PublishValidationError as e:
+                # The POS product itself is created either way; publishing
+                # online just didn't happen yet. Surfaced as a warning, not
+                # a failure, so staff aren't blocked from saving a product
+                # while they're still filling in storefront details.
+                publish_warning = str(e)
+
+        response_data = ProductDetailSerializer(product, context={"request": request}).data
+        if publish_warning:
+            response_data["publish_warning"] = publish_warning
+
+        return Response(response_data, status=status.HTTP_201_CREATED)
 
 
 class ProductDetailView(GenericAPIView):
@@ -355,14 +405,52 @@ class ProductDetailView(GenericAPIView):
 
         try:
             location_ids = _parse_json_field(request, "locations", None)
+            features_data = _parse_json_field(request, "features", None)
         except ValueError as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
         if location_ids is not None:
             product.locations.set(Location.objects.filter(id__in=location_ids))
 
-        return Response(
-            ProductDetailSerializer(product, context={"request": request}).data
-        )
+        if features_data is not None:
+            product.features.all().delete()
+            POSProductFeature.objects.bulk_create(
+                [
+                    POSProductFeature(product=product, feature=str(f).strip(), display_order=i)
+                    for i, f in enumerate(features_data)
+                    if str(f).strip()
+                ]
+            )
+
+        if request.FILES.get("cover_image"):
+            product.images.filter(image_type="cover").delete()
+            POSProductImage.objects.create(
+                product=product, image=request.FILES["cover_image"], image_type="cover", display_order=0
+            )
+        if request.FILES.get("hover_image"):
+            product.images.filter(image_type="hover").delete()
+            POSProductImage.objects.create(
+                product=product, image=request.FILES["hover_image"], image_type="hover", display_order=0
+            )
+        for i, f in enumerate(request.FILES.getlist("gallery_images")):
+            POSProductImage.objects.create(
+                product=product, image=f, image_type="gallery", display_order=i
+            )
+
+        publish_warning = None
+        if product.publish_online:
+            try:
+                sync_product_to_storefront(product)
+            except PublishValidationError as e:
+                publish_warning = str(e)
+        else:
+            sync_product_to_storefront(product)  # deactivates the storefront mirror, if any
+
+        response_data = ProductDetailSerializer(product, context={"request": request}).data
+        if publish_warning:
+            response_data["publish_warning"] = publish_warning
+
+        return Response(response_data)
 
     def delete(self, request, pk):
         product = self._get_object(pk)

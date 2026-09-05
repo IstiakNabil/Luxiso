@@ -1,8 +1,10 @@
 from django.db import models
+from django.utils.text import slugify
 
 from .core import Location
 from .units import Unit
 from .lookups import Category, Brand, TaxRate
+from products.models import Color, Size, Category as StorefrontCategory, ProductType
 
 
 class BarcodeType(models.TextChoices):
@@ -109,11 +111,63 @@ class POSProduct(models.Model):
 
     is_active = models.BooleanField(default=True)
 
+    # --- Online storefront fields ---------------------------------
+    # POS is the only place a product is created; when publish_online
+    # is on, this row is mirrored into products.Product/ProductVariant
+    # (see core.stock_service / the storefront sync helper) so the
+    # storefront never has its own product-creation path.
+    slug = models.SlugField(max_length=255, unique=True, null=True, blank=True)
+
+    publish_online = models.BooleanField(
+        default=True,
+        help_text="If on, this product (and its variants) is created/kept in sync on the storefront.",
+    )
+
+    # Deliberately separate from `category`/`brand` above -- those
+    # drive internal POS reporting; these drive storefront browsing
+    # (Shop All filters), which uses a different taxonomy.
+    storefront_category = models.ForeignKey(
+        StorefrontCategory,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="pos_products",
+    )
+    storefront_type = models.ForeignKey(
+        ProductType,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="pos_products",
+    )
+
+    short_description = models.CharField(max_length=300, blank=True)
+    fitting = models.TextField(blank=True)
+    fabric_and_care = models.TextField(blank=True)
+    shipping_and_return = models.TextField(blank=True)
+
+    is_featured = models.BooleanField(default=False)
+    is_new_arrival = models.BooleanField(default=False)
+    is_on_sale = models.BooleanField(default=False)
+
+    online_discount_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="If set, shown/charged online instead of the variant's selling_price.",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["name"]
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = slugify(self.name)
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.name
@@ -121,6 +175,45 @@ class POSProduct(models.Model):
     @property
     def product_type(self):
         return "Variable" if self.has_variants else "Single"
+
+
+class POSProductImage(models.Model):
+    """Storefront gallery images for a POSProduct. Separate from the
+    single `POSProduct.image` field (used as the internal POS/receipt
+    thumbnail) so adding online gallery photos doesn't disturb it."""
+
+    IMAGE_TYPES = (
+        ("cover", "Cover"),
+        ("hover", "Hover"),
+        ("gallery", "Gallery"),
+    )
+
+    product = models.ForeignKey(POSProduct, on_delete=models.CASCADE, related_name="images")
+    image = models.ImageField(upload_to="pos/products/gallery/")
+    image_type = models.CharField(max_length=20, choices=IMAGE_TYPES, default="gallery")
+    display_order = models.PositiveIntegerField(default=0)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["display_order"]
+
+    def __str__(self):
+        return f"{self.product.name} - {self.image_type}"
+
+
+class POSProductFeature(models.Model):
+    """Storefront bullet-point features for a POSProduct."""
+
+    product = models.ForeignKey(POSProduct, on_delete=models.CASCADE, related_name="features")
+    feature = models.CharField(max_length=255)
+    display_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["display_order"]
+
+    def __str__(self):
+        return f"{self.product.name} - {self.feature}"
 
 
 def ean13_check_digit(twelve_digits: str) -> str:
@@ -170,12 +263,19 @@ class POSVariant(models.Model):
         POSProduct, on_delete=models.CASCADE, related_name="variants"
     )
 
-    variant_name = models.CharField(max_length=100, blank=True)
-    size = models.CharField(
-        max_length=50, blank=True, help_text="Optional structured size; not yet used for display."
+    # Structured color/size -- the same lookup tables the storefront
+    # uses for its swatches/dropdowns, so a POS-created variant needs
+    # no translation to display correctly online.
+    color = models.ForeignKey(
+        Color, on_delete=models.PROTECT, null=True, blank=True, related_name="pos_variants"
     )
-    color = models.CharField(
-        max_length=50, blank=True, help_text="Optional structured colour; not yet used for display."
+    size = models.ForeignKey(
+        Size, on_delete=models.PROTECT, null=True, blank=True, related_name="pos_variants"
+    )
+    variant_name = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Optional free-text override label -- for non-fashion/no-variant items only.",
     )
     sku = models.CharField(max_length=100, unique=True)
     barcode = models.CharField(
@@ -208,15 +308,22 @@ class POSVariant(models.Model):
             super().save(update_fields=["barcode"])
 
     class Meta:
-        ordering = ["product", "variant_name"]
+        ordering = ["product", "color", "size"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["product", "color", "size"], name="unique_pos_variant_color_size"
+            )
+        ]
 
     def __str__(self):
-        label = self.variant_name or self.product.name
-        return f"{self.product.name} - {label}" if self.variant_name else self.product.name
+        return self.display_name
 
     @property
     def display_name(self):
-        return str(self)
+        if self.color_id and self.size_id:
+            return f"{self.product.name} - {self.color.name} / {self.size.name}"
+        label = self.variant_name or self.product.name
+        return f"{self.product.name} - {label}" if self.variant_name else self.product.name
 
     @property
     def effective_alert_quantity(self):

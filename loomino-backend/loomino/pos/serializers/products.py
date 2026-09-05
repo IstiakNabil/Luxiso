@@ -2,7 +2,10 @@ from decimal import Decimal
 
 from rest_framework import serializers
 
-from ..models import POSProduct, POSVariant, Unit, Category, Brand, TaxRate
+from ..models import (
+    POSProduct, POSVariant, POSProductImage, POSProductFeature, Unit, Category, Brand, TaxRate,
+)
+from products.models import Category as StorefrontCategory, ProductType
 
 
 def _price_range(values: list[Decimal]) -> str:
@@ -85,12 +88,35 @@ class ProductListSerializer(serializers.ModelSerializer):
 
 
 class VariantMiniSerializer(serializers.ModelSerializer):
+    color_name = serializers.CharField(source="color.name", default=None, read_only=True)
+    size_name = serializers.CharField(source="size.name", default=None, read_only=True)
+
     class Meta:
         model = POSVariant
         fields = [
-            "id", "variant_name", "size", "color", "sku", "barcode",
-            "purchase_price", "selling_price", "alert_quantity",
+            "id", "variant_name", "size", "size_name", "color", "color_name",
+            "sku", "barcode", "purchase_price", "selling_price", "alert_quantity",
         ]
+
+
+class ProductImageSerializer(serializers.ModelSerializer):
+    image_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = POSProductImage
+        fields = ["id", "image_url", "image_type", "display_order"]
+
+    def get_image_url(self, obj):
+        request = self.context.get("request")
+        if obj.image and hasattr(obj.image, "url"):
+            return request.build_absolute_uri(obj.image.url) if request else obj.image.url
+        return None
+
+
+class ProductFeatureSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = POSProductFeature
+        fields = ["id", "feature", "display_order"]
 
 
 class ProductDetailSerializer(serializers.ModelSerializer):
@@ -100,6 +126,9 @@ class ProductDetailSerializer(serializers.ModelSerializer):
     location_ids = serializers.PrimaryKeyRelatedField(
         source="locations", many=True, read_only=True
     )
+    gallery_images = ProductImageSerializer(source="images", many=True, read_only=True)
+    features = ProductFeatureSerializer(many=True, read_only=True)
+    is_published_online = serializers.SerializerMethodField()
 
     class Meta:
         model = POSProduct
@@ -131,6 +160,22 @@ class ProductDetailSerializer(serializers.ModelSerializer):
             "is_active",
             "variants",
             "created_at",
+            # Online storefront fields
+            "slug",
+            "publish_online",
+            "storefront_category",
+            "storefront_type",
+            "short_description",
+            "fitting",
+            "fabric_and_care",
+            "shipping_and_return",
+            "is_featured",
+            "is_new_arrival",
+            "is_on_sale",
+            "online_discount_price",
+            "gallery_images",
+            "features",
+            "is_published_online",
         ]
 
     def get_image_url(self, obj):
@@ -144,6 +189,10 @@ class ProductDetailSerializer(serializers.ModelSerializer):
         if obj.brochure and hasattr(obj.brochure, "url"):
             return request.build_absolute_uri(obj.brochure.url) if request else obj.brochure.url
         return None
+
+    def get_is_published_online(self, obj):
+        storefront = getattr(obj, "storefront_product", None)
+        return bool(storefront and storefront.is_active)
 
 
 class ProductWriteSerializer(serializers.ModelSerializer):
@@ -167,6 +216,12 @@ class ProductWriteSerializer(serializers.ModelSerializer):
     )
     tax_rate = serializers.PrimaryKeyRelatedField(
         queryset=TaxRate.objects.all(), required=False, allow_null=True
+    )
+    storefront_category = serializers.PrimaryKeyRelatedField(
+        queryset=StorefrontCategory.objects.all(), required=False, allow_null=True
+    )
+    storefront_type = serializers.PrimaryKeyRelatedField(
+        queryset=ProductType.objects.all(), required=False, allow_null=True
     )
 
     class Meta:
@@ -192,6 +247,18 @@ class ProductWriteSerializer(serializers.ModelSerializer):
             "custom_field_4",
             "not_for_selling",
             "is_active",
+            # Online storefront fields -- see pos/services/storefront_sync.py
+            "publish_online",
+            "storefront_category",
+            "storefront_type",
+            "short_description",
+            "fitting",
+            "fabric_and_care",
+            "shipping_and_return",
+            "is_featured",
+            "is_new_arrival",
+            "is_on_sale",
+            "online_discount_price",
         ]
 
     def validate_name(self, value):
