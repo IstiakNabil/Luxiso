@@ -21,10 +21,6 @@ COPY . .
 # import settings.py at all -- these are throwaway build-time
 # placeholders, never used at runtime (the real values come from
 # docker-compose's env_file at container start).
-RUN SECRET_KEY=build-only-placeholder \
-    DB_NAME=build DB_USER=build DB_PASSWORD=build \
-    EMAIL_HOST_USER=build EMAIL_HOST_PASSWORD=build \
-    python manage.py collectstatic --noinput
 
 EXPOSE 8000
 
