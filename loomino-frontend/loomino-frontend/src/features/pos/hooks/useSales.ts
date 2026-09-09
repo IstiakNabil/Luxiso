@@ -4,12 +4,14 @@ import {
   getSales,
   getSaleDetail,
   createSale,
+  updateSale,
   deleteSale,
+  addSalePayment,
   getReturnableSaleItems,
   getSaleReturns,
   createSaleReturn,
 } from "../services/pos.service";
-import type { SaleFilters } from "../types/pos";
+import type { SaleFilters, PaymentMethodValue } from "../types/pos";
 
 export function useSales(page: number, filters: SaleFilters) {
   return useQuery({
@@ -38,11 +40,42 @@ export function useCreateSale() {
   });
 }
 
+export function useUpdateSale() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: number; payload: Record<string, unknown> }) =>
+      updateSale(id, payload),
+    onSuccess: (_, { id }) => {
+      qc.invalidateQueries({ queryKey: ["pos", "sales"] });
+      qc.invalidateQueries({ queryKey: ["pos", "sales", "detail", id] });
+      qc.invalidateQueries({ queryKey: ["pos", "products"] });
+      qc.invalidateQueries({ queryKey: ["pos", "dashboard"] });
+    },
+  });
+}
+
 export function useDeleteSale() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => deleteSale(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["pos", "sales"] }),
+  });
+}
+
+export function useAddSalePayment(saleId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: {
+      amount: string;
+      paid_on?: string;
+      payment_method?: PaymentMethodValue;
+      payment_reference?: string;
+      payment_note?: string;
+    }) => addSalePayment(saleId, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["pos", "sales", "detail", saleId] });
+      qc.invalidateQueries({ queryKey: ["pos", "sales"] });
+    },
   });
 }
 

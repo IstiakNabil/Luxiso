@@ -8,6 +8,7 @@ import { usePOSLocations } from "../hooks/useDashboard";
 import { useContacts } from "../hooks/useContacts";
 import { useBusinessSettings } from "../hooks/useSettings";
 import { useCreateSale } from "../hooks/useSales";
+import { useVariantSearch } from "../hooks/usePurchases";
 import { scanVariant } from "../services/pos.service";
 import { printReceipts } from "../utils/receipt";
 import { formatMoney } from "../utils/format";
@@ -41,6 +42,8 @@ function POSRegisterPage() {
   const scanInputRef = useRef<HTMLInputElement>(null);
   const [scanCode, setScanCode] = useState("");
   const [scanning, setScanning] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const suggestQuery = useVariantSearch(scanCode);
   const [locationId, setLocationId] = useState<number | "">("");
   const [customerId, setCustomerId] = useState<number | "">("");
   const [cart, setCart] = useState<CartLine[]>([]);
@@ -128,6 +131,16 @@ function POSRegisterPage() {
       setScanning(false);
       focusScan();
     }
+  };
+
+  // A dropdown suggestion is added by re-running it through the exact
+  // same scan lookup (by its own SKU, guaranteed to match exactly) --
+  // never adds it directly from the search result -- so the stock and
+  // "not for selling" checks in addToCart are never bypassed just
+  // because the person found it by name instead of scanning it.
+  const selectSuggestion = (sku: string) => {
+    setShowSuggestions(false);
+    addToCart(sku);
   };
 
   const updateLine = (variantId: number, patch: Partial<CartLine>) => {
@@ -237,29 +250,67 @@ function POSRegisterPage() {
       </div>
 
       {/* Scan box — autofocused, since a barcode scanner just types + Enter */}
-      <div className="rounded-2xl border-2 border-[#7C6AE8] bg-white p-4">
+      <div className="relative rounded-2xl border-2 border-[#7C6AE8] bg-white p-4">
         <label className="mb-2 flex items-center gap-2 text-[13px] font-semibold text-[#7C6AE8]">
-          <ScanLine size={18} /> Scan barcode or enter SKU
+          <ScanLine size={18} /> Scan barcode or enter SKU / product name
         </label>
         <input
           ref={scanInputRef}
           autoFocus
           value={scanCode}
-          onChange={(e) => setScanCode(e.target.value)}
+          onChange={(e) => {
+            setScanCode(e.target.value);
+            setShowSuggestions(true);
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               e.preventDefault();
+              setShowSuggestions(false);
               addToCart(scanCode);
+            } else if (e.key === "Escape") {
+              setShowSuggestions(false);
             }
           }}
+          onBlur={() => {
+            // Delay so a click on a suggestion registers before the
+            // dropdown disappears.
+            setTimeout(() => setShowSuggestions(false), 150);
+          }}
           disabled={scanning}
-          placeholder="Scan a product…"
+          placeholder="Scan, or type a SKU / product name…"
           className="w-full rounded-lg border border-[#E7E4F3] px-4 py-3 text-[16px] outline-none focus:border-[#7C6AE8] disabled:bg-[#F5F4FA]"
         />
         <p className="mt-1.5 text-[12px] text-[#A8A2C9]">
           A scanner types the code and presses Enter automatically — no setup needed. You can
-          also type a SKU by hand.
+          also type a SKU or product name by hand and pick from the list.
         </p>
+
+        {showSuggestions && scanCode.trim().length >= 2 && (
+          <div className="absolute left-4 right-4 z-20 mt-1 max-h-64 overflow-y-auto rounded-lg border border-[#E7E4F3] bg-white shadow-lg">
+            {suggestQuery.isLoading ? (
+              <p className="px-3 py-2 text-[13px] text-[#A8A2C9]">Searching…</p>
+            ) : (suggestQuery.data?.length ?? 0) === 0 ? (
+              <p className="px-3 py-2 text-[13px] text-[#A8A2C9]">No matching products.</p>
+            ) : (
+              suggestQuery.data!.map((result) => (
+                <button
+                  key={result.id}
+                  type="button"
+                  onClick={() => selectSuggestion(result.sku)}
+                  className="flex w-full items-center justify-between border-b border-[#F5F4FA] px-3 py-2 text-left last:border-b-0 hover:bg-[#F5F4FA]"
+                >
+                  <span className="text-[13px] text-[#221F35]">
+                    {result.display_name}
+                    <span className="ml-2 text-[12px] text-[#A8A2C9]">{result.sku}</span>
+                  </span>
+                  <span className="text-[12px] font-medium text-[#7C6AE8]">
+                    {formatMoney(result.selling_price, sym)}
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_340px]">

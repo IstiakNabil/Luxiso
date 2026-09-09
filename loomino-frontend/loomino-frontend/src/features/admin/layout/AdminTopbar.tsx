@@ -58,7 +58,7 @@ function AdminTopbar() {
             {(user?.first_name?.[0] ?? "L").toUpperCase()}
           </div>
           <span className="text-[13px] font-medium text-[#3A2E1B]">
-            {user?.first_name ?? "Loomino"}
+            {user?.first_name ?? "Luxyso"}
           </span>
         </div>
       </div>

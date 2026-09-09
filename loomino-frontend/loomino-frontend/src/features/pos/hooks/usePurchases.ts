@@ -5,11 +5,12 @@ import {
   getPurchases,
   getPurchaseDetail,
   createPurchase,
+  addPurchasePayment,
   getPurchaseReturns,
   getReturnableItems,
   createPurchaseReturn,
 } from "../services/pos.service";
-import type { PurchaseFilters } from "../types/pos";
+import type { PurchaseFilters, PaymentMethodValue } from "../types/pos";
 
 export function useReturnableItems(purchaseId: number | null) {
   return useQuery({
@@ -73,5 +74,22 @@ export function usePurchaseReturns(
   return useQuery({
     queryKey: ["pos", "purchase-returns", page, filters],
     queryFn: () => getPurchaseReturns(page, filters),
+  });
+}
+
+export function useAddPurchasePayment(purchaseId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: {
+      amount: string;
+      paid_on?: string;
+      payment_method?: PaymentMethodValue;
+      payment_reference?: string;
+      payment_note?: string;
+    }) => addPurchasePayment(purchaseId, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["pos", "purchases", "detail", purchaseId] });
+      qc.invalidateQueries({ queryKey: ["pos", "purchases"] });
+    },
   });
 }

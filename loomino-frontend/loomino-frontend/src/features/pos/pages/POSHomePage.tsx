@@ -225,7 +225,6 @@ function POSHomePage() {
           fetchAll={() => fetchAllPages((p) => getStockAlert(p, filters))}
           columns={[
             { header: "Product", render: (row) => row.product },
-            { header: "Location", render: (row) => row.location },
             {
               header: "Current Stock",
               align: "right",

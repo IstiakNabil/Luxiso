@@ -21,14 +21,13 @@ from ..models import (
     PaymentMethod,
     DiscountType,
     POSVariant,
-    StockLevel,
-    StockMovement,
     StockMovementType,
     Batch,
     PurchasePayment,
 )
 from ..pagination import POSResultsPagination
 from ..permissions import IsPOSStaff, IsPOSAdminOrManager
+from core.stock_service import deduct_stock, restock, InsufficientStockError
 from ..serializers.purchases import (
     PurchaseListSerializer,
     PurchaseDetailSerializer,
@@ -176,17 +175,11 @@ class PurchaseListCreateView(GenericAPIView):
                     subtotal += line_total
 
                     # Stock increases the moment the purchase is saved.
-                    stock_level, _ = StockLevel.objects.get_or_create(
-                        variant=variant, location=purchase.location
-                    )
-                    stock_level.quantity += quantity
-                    stock_level.save(update_fields=["quantity"])
-
-                    StockMovement.objects.create(
+                    restock(
                         variant=variant,
                         location=purchase.location,
-                        movement_type=StockMovementType.PURCHASE,
                         quantity=quantity,
+                        movement_type=StockMovementType.PURCHASE,
                         reference_type="purchase",
                         reference_id=purchase.id,
                         note=f"Purchase {purchase.reference_no}",
@@ -253,10 +246,24 @@ class PurchaseListCreateView(GenericAPIView):
                 # is what Purchase Payment Report actually lists, not
                 # Purchase.paid_amount directly.
                 if purchase.paid_amount > 0:
+                    # request.data.get("paid_on") arrives as a plain
+                    # string (JSON or multipart both send text over
+                    # the wire) -- same bug as PurchasePaymentCreateView
+                    # below: must be parsed into a real datetime before
+                    # assignment, or PurchasePayment.save()'s
+                    # self.paid_on.year blows up the moment a caller
+                    # actually supplies this field explicitly.
+                    raw_paid_on = request.data.get("paid_on")
+                    if raw_paid_on:
+                        parsed_paid_on = parse_datetime(raw_paid_on)
+                        paid_on = parsed_paid_on if parsed_paid_on else purchase.purchase_date
+                    else:
+                        paid_on = purchase.purchase_date
+
                     PurchasePayment.objects.create(
                         purchase=purchase,
                         amount=purchase.paid_amount,
-                        paid_on=request.data.get("paid_on") or purchase.purchase_date,
+                        paid_on=paid_on,
                         payment_method=request.data.get("payment_method", PaymentMethod.CASH),
                         payment_reference=request.data.get("payment_reference", ""),
                         payment_note=request.data.get("payment_note", ""),
@@ -287,7 +294,7 @@ class PurchaseDetailView(GenericAPIView):
 
     def get_queryset(self):
         return Purchase.objects.select_related("location", "supplier", "tax_rate").prefetch_related(
-            "items", "items__variant", "items__variant__product"
+            "items", "items__variant", "items__variant__product", "payments"
         )
 
     def _get_object(self, pk):
@@ -397,16 +404,6 @@ class PurchaseReturnListView(GenericAPIView):
                     unit_cost = _to_decimal(row.get("unit_cost"))
                     line_total = quantity * unit_cost
 
-                    stock_level = StockLevel.objects.filter(
-                        variant=variant, location=purchase.location
-                    ).first()
-                    current_qty = stock_level.quantity if stock_level else Decimal("0")
-                    if quantity > current_qty:
-                        raise ValueError(
-                            f"Can't return {quantity} of {variant} -- only {current_qty} in stock "
-                            f"at {purchase.location.name}."
-                        )
-
                     PurchaseReturnItem.objects.create(
                         purchase_return=purchase_return,
                         variant=variant,
@@ -416,19 +413,19 @@ class PurchaseReturnListView(GenericAPIView):
                     )
                     total += line_total
 
-                    stock_level.quantity -= quantity
-                    stock_level.save(update_fields=["quantity"])
-
-                    StockMovement.objects.create(
-                        variant=variant,
-                        location=purchase.location,
-                        movement_type=StockMovementType.PURCHASE_RETURN,
-                        quantity=quantity,
-                        reference_type="purchase_return",
-                        reference_id=purchase_return.id,
-                        note=f"Return against {purchase.reference_no}",
-                        created_by=request.user,
-                    )
+                    try:
+                        deduct_stock(
+                            variant=variant,
+                            location=purchase.location,
+                            quantity=quantity,
+                            movement_type=StockMovementType.PURCHASE_RETURN,
+                            reference_type="purchase_return",
+                            reference_id=purchase_return.id,
+                            note=f"Return against {purchase.reference_no}",
+                            created_by=request.user,
+                        )
+                    except InsufficientStockError as e:
+                        raise ValueError(str(e))
 
                 purchase_return.total = total
                 purchase_return.save(update_fields=["total"])

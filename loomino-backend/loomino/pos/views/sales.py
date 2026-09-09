@@ -208,10 +208,22 @@ class SaleListCreateView(GenericAPIView):
                 # Draft/Quotation/Suspended never get a payment ledger
                 # row, same reasoning as why they never touch stock.
                 if sale_status == SaleStatus.FINAL and sale.paid_amount > 0:
+                    # request.data.get("paid_on") arrives as a plain
+                    # string -- same fix as SalePaymentCreateView and
+                    # the equivalent Purchase bug: must be parsed into
+                    # a real datetime before assignment, or
+                    # SalePayment.save()'s self.paid_on.year blows up.
+                    raw_paid_on = request.data.get("paid_on")
+                    if raw_paid_on:
+                        parsed_paid_on = parse_datetime(raw_paid_on)
+                        paid_on = parsed_paid_on if parsed_paid_on else sale.sale_date
+                    else:
+                        paid_on = sale.sale_date
+
                     SalePayment.objects.create(
                         sale=sale,
                         amount=sale.paid_amount,
-                        paid_on=request.data.get("paid_on") or sale.sale_date,
+                        paid_on=paid_on,
                         payment_method=request.data.get("payment_method", PaymentMethod.CASH),
                         payment_reference=request.data.get("payment_reference", ""),
                         payment_note=request.data.get("payment_note", ""),
@@ -245,7 +257,7 @@ class SaleDetailView(GenericAPIView):
 
     def get_queryset(self):
         return Sale.objects.select_related("location", "customer", "tax_rate").prefetch_related(
-            "items", "items__variant", "items__variant__product"
+            "items", "items__variant", "items__variant__product", "payments"
         )
 
     def _get_object(self, pk):
@@ -257,11 +269,150 @@ class SaleDetailView(GenericAPIView):
 
     def patch(self, request, pk):
         sale = self._get_object(pk)
-        allowed = {"status", "shipping_status", "delivered_to", "notes"}
-        data = {k: v for k, v in request.data.items() if k in allowed}
-        for key, value in data.items():
-            setattr(sale, key, value)
-        sale.save(update_fields=list(data.keys()) or ["updated_at"])
+
+        try:
+            items_data = _parse_json_field(request, "items", None)
+        except ValueError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        if items_data is None:
+            # No items supplied -- the original lightweight edit path,
+            # unchanged: just the handful of fields that never affect
+            # stock or totals.
+            allowed = {"status", "shipping_status", "delivered_to", "notes"}
+            data = {k: v for k, v in request.data.items() if k in allowed}
+            for key, value in data.items():
+                setattr(sale, key, value)
+            sale.save(update_fields=list(data.keys()) or ["updated_at"])
+            return Response(SaleDetailSerializer(sale, context={"request": request}).data)
+
+        # A full edit -- items were supplied, so this rewrites the
+        # invoice's line items and order-level fields together and
+        # reconciles stock/totals. Same risk class as a Return (it can
+        # silently rewrite what a Final invoice's stock impact was),
+        # so it's gated the same way -- Admin/Manager only, tighter
+        # than the CanSell permission this endpoint otherwise allows.
+        if not IsPOSAdminOrManager().has_permission(request, self):
+            return Response(
+                {"detail": "Editing an invoice's items requires the POS Admin or Manager role."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # Never touches sale.paid_amount or the SalePayment ledger --
+        # the SalePayment ledger -- what was actually paid is a
+        # historical fact independent of what the invoice now says is
+        # owed; only `total` (and therefore payment_status/due_amount)
+        # moves. Editing a Final invoice's items reverses the OLD
+        # lines' stock impact and reapplies the NEW lines' impact as
+        # fresh, separately audited StockMovement rows (reference_type
+        # "sale_edit_reversal" / "sale_edit") -- nothing is silently
+        # rewritten, so the movement history stays a true account of
+        # what happened and when.
+        if not items_data:
+            return Response(
+                {"items": ["At least one product line is required."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        was_stock_moving = sale.status in STOCK_MOVING_STATUSES
+        old_items = list(sale.items.select_related("variant"))
+        old_location = sale.location
+
+        order_serializer = SaleWriteSerializer(sale, data=request.data, partial=True)
+        order_serializer.is_valid(raise_exception=True)
+
+        try:
+            with transaction.atomic():
+                sale = order_serializer.save()
+                is_stock_moving_now = sale.status in STOCK_MOVING_STATUSES
+
+                if was_stock_moving:
+                    for old_item in old_items:
+                        restock(
+                            variant=old_item.variant,
+                            location=old_location,
+                            quantity=old_item.quantity,
+                            movement_type=StockMovementType.SALE_RETURN,
+                            reference_type="sale_edit_reversal",
+                            reference_id=sale.id,
+                            note=f"Edit of {sale.invoice_no} -- reversing previous line items",
+                            created_by=request.user,
+                        )
+
+                sale.items.all().delete()
+
+                subtotal = Decimal("0")
+                total_quantity = Decimal("0")
+
+                for row in items_data:
+                    variant = get_object_or_404(POSVariant, pk=row.get("variant"))
+                    quantity = _to_decimal(row.get("quantity"))
+                    if quantity <= 0:
+                        raise ValueError("Quantity must be greater than zero for every line.")
+                    unit_price = _to_decimal(row.get("unit_price"))
+                    discount_amount = _to_decimal(row.get("discount_amount"), "0")
+                    line_subtotal = quantity * unit_price - discount_amount
+
+                    SaleItem.objects.create(
+                        sale=sale,
+                        variant=variant,
+                        quantity=quantity,
+                        unit_price=unit_price,
+                        discount_amount=discount_amount,
+                        subtotal=line_subtotal,
+                    )
+                    subtotal += line_subtotal
+                    total_quantity += quantity
+
+                    if is_stock_moving_now:
+                        try:
+                            deduct_stock(
+                                variant=variant,
+                                location=sale.location,
+                                quantity=quantity,
+                                movement_type=StockMovementType.SALE,
+                                reference_type="sale_edit",
+                                reference_id=sale.id,
+                                note=f"Edit of {sale.invoice_no}",
+                                created_by=request.user,
+                            )
+                        except InsufficientStockError as e:
+                            raise ValueError(str(e))
+
+                if sale.discount_type == DiscountType.PERCENTAGE:
+                    discount = subtotal * sale.discount_amount / 100
+                elif sale.discount_type == DiscountType.FIXED:
+                    discount = sale.discount_amount
+                else:
+                    discount = Decimal("0")
+
+                taxable = subtotal - discount
+                tax = taxable * sale.tax_rate.rate / 100 if sale.tax_rate else Decimal("0")
+                total = taxable + tax + sale.shipping_charges + sale.additional_expenses_amount
+
+                if not is_stock_moving_now:
+                    payment_status = PaymentStatus.DUE
+                elif total <= 0:
+                    payment_status = PaymentStatus.PAID
+                elif sale.paid_amount <= 0:
+                    payment_status = PaymentStatus.DUE
+                elif sale.paid_amount >= total:
+                    payment_status = PaymentStatus.PAID
+                else:
+                    payment_status = PaymentStatus.PARTIAL
+
+                sale.subtotal = subtotal
+                sale.discount = discount
+                sale.tax = tax
+                sale.total = total
+                sale.total_quantity = total_quantity
+                sale.payment_status = payment_status
+                sale.save(update_fields=[
+                    "subtotal", "discount", "tax", "total", "total_quantity", "payment_status",
+                ])
+        except (ValueError, InvalidOperation) as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
         return Response(SaleDetailSerializer(sale, context={"request": request}).data)
 
     def delete(self, request, pk):

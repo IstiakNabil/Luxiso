@@ -190,17 +190,23 @@ function SalesTable({ fixedStatus, title, subtitle, addPath }: SalesTableProps) 
             header: "Action",
             exportable: false,
             render: (row) => (
-              row.status !== "final" ? (
-                <button
-                  type="button"
-                  onClick={() => setConfirmDeleteId(row.id)}
-                  className="flex items-center gap-1 rounded-md border border-[#F3DCDC] px-2.5 py-1 text-[12px] font-medium text-[#C24F4F] hover:bg-[#FBE9E9]"
+              <div className="flex items-center gap-2">
+                <Link
+                  to={`/admin/pos/sell/${row.id}`}
+                  className="rounded-md border border-[#E7E4F3] px-2.5 py-1 text-[12px] font-medium text-[#726C8C] hover:bg-[#F5F4FA]"
                 >
-                  <Trash2 size={12} /> Delete
-                </button>
-              ) : (
-                <span className="text-[12px] text-[#A8A2C9]">—</span>
-              )
+                  View
+                </Link>
+                {row.status !== "final" && (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDeleteId(row.id)}
+                    className="flex items-center gap-1 rounded-md border border-[#F3DCDC] px-2.5 py-1 text-[12px] font-medium text-[#C24F4F] hover:bg-[#FBE9E9]"
+                  >
+                    <Trash2 size={12} /> Delete
+                  </button>
+                )}
+              </div>
             ),
           },
         ]}

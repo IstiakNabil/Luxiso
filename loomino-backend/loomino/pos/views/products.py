@@ -56,11 +56,11 @@ class VariantScanView(APIView):
     """
     GET /api/pos/products/variants/scan/?code=<scanned>&location=<id>
 
-    The checkout scan lookup. Deliberately an EXACT match on barcode
-    or SKU, never a fuzzy one -- a scanner feeding a real code must
-    resolve to exactly one item or fail loudly, because silently
-    grabbing the "closest" product would put the wrong thing in a
-    customer's basket.
+    Deliberately an EXACT match on barcode or SKU (variant, or a
+    single-variant product's own SKU), never a fuzzy one -- a scanner
+    feeding a real code must resolve to exactly one item or fail
+    loudly, because silently grabbing the "closest" product would put
+    the wrong thing in a customer's basket.
 
     Returns 404 with a clear message when nothing matches, so the
     till can beep/show "Unknown barcode" rather than sit silent.
@@ -82,18 +82,32 @@ class VariantScanView(APIView):
             .first()
         )
         if variant is None:
+            # A single-variant (has_variants=False) product's own SKU is
+            # the only SKU the person creating/labeling it ever sees or
+            # thinks of -- it's a reasonable, unambiguous scan target
+            # even though the variant underneath has its own separate
+            # SKU. Not extended to variable products: matching by the
+            # parent SKU there is ambiguous (which color/size?), so
+            # those must still scan/type an exact variant code.
+            variant = (
+                POSVariant.objects.filter(
+                    product__sku=code, product__has_variants=False
+                )
+                .filter(is_active=True, product__is_active=True)
+                .select_related("product", "product__unit", "product__tax_rate")
+                .first()
+            )
+        if variant is None:
             return Response(
                 {"detail": f"No product found for code '{code}'."},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        location_id = request.query_params.get("location")
-        current_stock = None
-        if location_id:
-            stock_level = StockLevel.objects.filter(
-                variant=variant, location_id=location_id
-            ).first()
-            current_stock = stock_level.quantity if stock_level else Decimal("0")
+        # Stock is shared across every location now -- location_id is
+        # still accepted for backward compatibility with older clients
+        # but no longer changes which number comes back.
+        stock_level = StockLevel.objects.filter(variant=variant).first()
+        current_stock = stock_level.quantity if stock_level else Decimal("0")
 
         return Response(
             {
@@ -189,7 +203,6 @@ class ProductListCreateView(GenericAPIView):
         ).prefetch_related(
             "variants",
             "variants__stock_levels",
-            "variants__stock_levels__location",
             "locations",
         )
 
@@ -230,7 +243,7 @@ class ProductListCreateView(GenericAPIView):
         serializer = ProductListSerializer(
             page,
             many=True,
-            context={"request": request, "location_id": request.query_params.get("location")},
+            context={"request": request},
         )
         return self.get_paginated_response(serializer.data)
 
@@ -309,16 +322,13 @@ class ProductListCreateView(GenericAPIView):
                     )
                     created_variants.append(variant)
 
-                # Seed a zero StockLevel per (variant, tagged location) so
-                # Purchases/Stock Adjustments have a row to increment later
-                # -- deliberately zero, not an opening-stock quantity.
-                if manage_stock and locations:
+                # Seed a zero StockLevel per variant so Purchases/
+                # Stock Adjustments have a row to increment later --
+                # deliberately zero, not an opening-stock quantity.
+                # One shared row per variant, not per location.
+                if manage_stock:
                     StockLevel.objects.bulk_create(
-                        [
-                            StockLevel(variant=variant, location=location, quantity=0)
-                            for variant in created_variants
-                            for location in locations
-                        ],
+                        [StockLevel(variant=variant, quantity=0) for variant in created_variants],
                         ignore_conflicts=True,
                     )
 

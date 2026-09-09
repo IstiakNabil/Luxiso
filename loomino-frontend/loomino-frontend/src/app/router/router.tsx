@@ -68,8 +68,11 @@ import POSSizesPage from "@/features/pos/pages/POSSizesPage";
 import POSPrintLabelsPage from "@/features/pos/pages/POSPrintLabelsPage";
 import POSPurchaseListPage from "@/features/pos/pages/POSPurchaseListPage";
 import POSAddPurchasePage from "@/features/pos/pages/POSAddPurchasePage";
+import POSPurchaseDetailPage from "@/features/pos/pages/POSPurchaseDetailPage";
 import POSPurchaseReturnListPage from "@/features/pos/pages/POSPurchaseReturnListPage";
 import POSAllSalesPage from "@/features/pos/pages/POSAllSalesPage";
+import POSSaleDetailPage from "@/features/pos/pages/POSSaleDetailPage";
+import POSEditSalePage from "@/features/pos/pages/POSEditSalePage";
 import POSAddSalePage from "@/features/pos/pages/POSAddSalePage";
 import POSDraftsListPage from "@/features/pos/pages/POSDraftsListPage";
 import POSAddDraftPage from "@/features/pos/pages/POSAddDraftPage";
@@ -90,6 +93,7 @@ import POSPurchasePaymentReportPage from "@/features/pos/pages/POSPurchasePaymen
 import POSSellPaymentReportPage from "@/features/pos/pages/POSSellPaymentReportPage";
 import POSProductPurchaseReportPage from "@/features/pos/pages/POSProductPurchaseReportPage";
 import POSExpenseReportPage from "@/features/pos/pages/POSExpenseReportPage";
+import POSProfitLossReportPage from "@/features/pos/pages/POSProfitLossReportPage";
 import POSStockReportPage from "@/features/pos/pages/POSStockReportPage";
 import POSProductSaleReportPage from "@/features/pos/pages/POSProductSaleReportPage";
 import POSTrendingProductsPage from "@/features/pos/pages/POSTrendingProductsPage";
@@ -347,9 +351,12 @@ export const router = createBrowserRouter([
           { path: "products/print-labels", element: <POSPrintLabelsPage /> },
           { path: "purchases/list", element: <POSPurchaseListPage /> },
           { path: "purchases/add", element: <POSAddPurchasePage /> },
+          { path: "purchases/:id", element: <POSPurchaseDetailPage /> },
           { path: "purchases/returns", element: <POSPurchaseReturnListPage /> },
           { path: "purchases/returns/add", element: <POSAddPurchaseReturnPage /> },
           { path: "sell/list", element: <POSAllSalesPage /> },
+          { path: "sell/:id/edit", element: <POSEditSalePage /> },
+          { path: "sell/:id", element: <POSSaleDetailPage /> },
           { path: "sell/add", element: <POSAddSalePage /> },
           { path: "sell/drafts", element: <POSDraftsListPage /> },
           { path: "sell/drafts/add", element: <POSAddDraftPage /> },
@@ -370,6 +377,7 @@ export const router = createBrowserRouter([
           { path: "reports/sale-payments", element: <POSSellPaymentReportPage /> },
           { path: "reports/product-purchases", element: <POSProductPurchaseReportPage /> },
           { path: "reports/expenses", element: <POSExpenseReportPage /> },
+          { path: "reports/profit-loss", element: <POSProfitLossReportPage /> },
           { path: "reports/stock", element: <POSStockReportPage /> },
           { path: "reports/product-sales", element: <POSProductSaleReportPage /> },
           { path: "reports/trending-products", element: <POSTrendingProductsPage /> },

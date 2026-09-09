@@ -156,6 +156,18 @@ function POSPurchaseListPage() {
           { header: "Grand Total", align: "right", render: (row) => formatMoney(row.total, sym) },
           { header: "Payment Due", align: "right", render: (row) => formatMoney(row.due_amount, sym) },
           { header: "Added By", render: (row) => row.added_by || "—" },
+          {
+            header: "Action",
+            exportable: false,
+            render: (row) => (
+              <Link
+                to={`/admin/pos/purchases/${row.id}`}
+                className="rounded-md border border-[#E7E4F3] px-2.5 py-1 text-[12px] font-medium text-[#726C8C] hover:bg-[#F5F4FA]"
+              >
+                View
+              </Link>
+            ),
+          },
         ]}
       />
     </div>

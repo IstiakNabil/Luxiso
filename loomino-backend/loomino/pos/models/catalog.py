@@ -364,28 +364,28 @@ class Batch(models.Model):
 
 class StockLevel(models.Model):
     """
-    Authoritative current stock of a variant at a location. Every
-    Purchase, Sale, and Stock Adjustment writes a StockMovement row
-    and updates this running total -- StockLevel is never edited by
-    hand outside that flow.
+    Authoritative current stock of a variant, shared across every
+    location and the online storefront alike -- there's a single
+    number per variant, not one per (variant, location). Every
+    Purchase, Sale, Stock Adjustment, and online order writes a
+    StockMovement row (which still records which Location the
+    transaction happened at, for reporting) and updates this single
+    running total -- StockLevel is never edited by hand outside that
+    flow.
     """
 
     variant = models.ForeignKey(
-        POSVariant, on_delete=models.CASCADE, related_name="stock_levels"
-    )
-    location = models.ForeignKey(
-        Location, on_delete=models.PROTECT, related_name="stock_levels"
+        POSVariant, on_delete=models.CASCADE, related_name="stock_levels", unique=True
     )
     quantity = models.DecimalField(max_digits=12, decimal_places=2, default=0)
 
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        unique_together = ("variant", "location")
         ordering = ["variant"]
 
     def __str__(self):
-        return f"{self.variant} @ {self.location.name}: {self.quantity}"
+        return f"{self.variant}: {self.quantity}"
 
 
 class StockMovementType(models.TextChoices):

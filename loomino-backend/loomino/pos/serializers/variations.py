@@ -1,5 +1,3 @@
-from decimal import Decimal
-
 from rest_framework import serializers
 
 from ..models import POSVariant, POSProduct
@@ -7,26 +5,28 @@ from products.models import Color, Size
 
 
 class VariationRowSerializer(serializers.ModelSerializer):
-    """Read shape for the Variations page -- one row per variant,
-    with a total-stock figure (summed across every location) for
-    context, same reasoning as ProductListSerializer.get_current_stock."""
+    """Read shape for the Variations page -- one row per variant.
+
+    Stock is a single shared number now (not per-location), so this
+    is just that one StockLevel row's quantity.
+    """
 
     color_name = serializers.CharField(source="color.name", default=None, read_only=True)
     size_name = serializers.CharField(source="size.name", default=None, read_only=True)
-    total_stock = serializers.SerializerMethodField()
+    stock = serializers.SerializerMethodField()
 
     class Meta:
         model = POSVariant
         fields = [
             "id", "product", "variant_name", "color", "color_name", "size", "size_name",
             "sku", "barcode", "purchase_price", "selling_price", "alert_quantity",
-            "is_active", "total_stock",
+            "is_active", "stock",
         ]
         read_only_fields = ["barcode"]
 
-    def get_total_stock(self, obj):
-        total = sum((sl.quantity for sl in obj.stock_levels.all()), Decimal("0"))
-        return str(total)
+    def get_stock(self, obj):
+        stock_level = obj.stock_levels.first()
+        return str(stock_level.quantity) if stock_level else "0"
 
 
 class VariationWriteSerializer(serializers.ModelSerializer):

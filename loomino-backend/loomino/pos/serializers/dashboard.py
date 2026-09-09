@@ -25,7 +25,6 @@ class PurchasePaymentDueSerializer(serializers.ModelSerializer):
 
 class ProductStockAlertSerializer(serializers.ModelSerializer):
     product = serializers.CharField(source="variant.display_name")
-    location = serializers.CharField(source="location.name")
     current_stock = serializers.DecimalField(
         source="quantity", max_digits=12, decimal_places=2
     )
@@ -33,7 +32,7 @@ class ProductStockAlertSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = StockLevel
-        fields = ["id", "product", "location", "current_stock", "unit"]
+        fields = ["id", "product", "current_stock", "unit"]
 
     def get_unit(self, obj):
         unit = obj.variant.product.unit

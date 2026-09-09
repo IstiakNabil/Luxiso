@@ -22,6 +22,8 @@ import ColorFormModal from "../components/ColorFormModal";
 import SizeFormModal from "../components/SizeFormModal";
 import StorefrontCategoryFormModal from "../components/StorefrontCategoryFormModal";
 import StorefrontTypeFormModal from "../components/StorefrontTypeFormModal";
+import CategoryFormModal from "../components/CategoryFormModal";
+import TaxRateFormModal from "../components/TaxRateFormModal";
 import type {
   BarcodeType,
   VariantInput,
@@ -31,6 +33,8 @@ import type {
   SizeOption,
   StorefrontCategory,
   StorefrontProductType,
+  Category,
+  TaxRate,
 } from "../types/pos";
 
 const BARCODE_TYPES: { value: BarcodeType; label: string }[] = [
@@ -176,6 +180,9 @@ function POSAddProductPage() {
   const [sizeModalForRow, setSizeModalForRow] = useState<number | null>(null);
   const [quickAddStorefrontCategory, setQuickAddStorefrontCategory] = useState(false);
   const [quickAddStorefrontType, setQuickAddStorefrontType] = useState(false);
+  const [quickAddCategory, setQuickAddCategory] = useState(false);
+  const [quickAddSubcategory, setQuickAddSubcategory] = useState(false);
+  const [quickAddTaxRate, setQuickAddTaxRate] = useState(false);
 
   // --- Online storefront ---------------------------------------
   const [publishOnline, setPublishOnline] = useState(true);
@@ -243,6 +250,16 @@ function POSAddProductPage() {
   };
   const handleStorefrontTypeCreated = (type: StorefrontProductType) => {
     setStorefrontTypeId(type.id);
+  };
+  const handleCategoryCreated = (category: Category) => {
+    setCategoryId(category.id);
+    setSubcategoryId("");
+  };
+  const handleSubcategoryCreated = (category: Category) => {
+    setSubcategoryId(category.id);
+  };
+  const handleTaxRateCreated = (taxRate: TaxRate) => {
+    setTaxId(taxRate.id);
   };
 
   const updateFeature = (index: number, value: string) =>
@@ -405,25 +422,61 @@ function POSAddProductPage() {
             </button>
           </div>
 
-          <Select
-            label="Category"
-            value={categoryId}
-            onChange={(v) => { setCategoryId(v); setSubcategoryId(""); }}
-            options={(categoriesQuery.data ?? []).filter((c) => c.parent === null)}
-          />
-          <Select
-            label="Sub category"
-            value={subcategoryId}
-            onChange={setSubcategoryId}
-            options={(categoriesQuery.data ?? []).filter((c) => c.parent === categoryId)}
-            placeholder={categoryId ? "Please Select" : "Select a category first"}
-          />
-          <Select
-            label="Tax"
-            value={taxId}
-            onChange={setTaxId}
-            options={(taxRatesQuery.data ?? []).map((t) => ({ id: t.id, name: `${t.name} (${t.rate}%)` }))}
-          />
+          <div className="flex items-end gap-2">
+            <div className="flex-1">
+              <Select
+                label="Category"
+                value={categoryId}
+                onChange={(v) => { setCategoryId(v); setSubcategoryId(""); }}
+                options={(categoriesQuery.data ?? []).filter((c) => c.parent === null)}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => setQuickAddCategory(true)}
+              className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-lg bg-[#7C6AE8] text-white hover:bg-[#6C5AD8]"
+              title="Add new category"
+            >
+              <Plus size={16} />
+            </button>
+          </div>
+          <div className="flex items-end gap-2">
+            <div className="flex-1">
+              <Select
+                label="Sub category"
+                value={subcategoryId}
+                onChange={setSubcategoryId}
+                options={(categoriesQuery.data ?? []).filter((c) => c.parent === categoryId)}
+                placeholder={categoryId ? "Please Select" : "Select a category first"}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => setQuickAddSubcategory(true)}
+              className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-lg bg-[#7C6AE8] text-white hover:bg-[#6C5AD8]"
+              title="Add new sub category"
+            >
+              <Plus size={16} />
+            </button>
+          </div>
+          <div className="flex items-end gap-2">
+            <div className="flex-1">
+              <Select
+                label="Tax"
+                value={taxId}
+                onChange={setTaxId}
+                options={(taxRatesQuery.data ?? []).map((t) => ({ id: t.id, name: `${t.name} (${t.rate}%)` }))}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => setQuickAddTaxRate(true)}
+              className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-lg bg-[#7C6AE8] text-white hover:bg-[#6C5AD8]"
+              title="Add new tax rate"
+            >
+              <Plus size={16} />
+            </button>
+          </div>
         </div>
 
         <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -502,7 +555,7 @@ function POSAddProductPage() {
               type="file"
               accept=".pdf,.csv,.zip,.doc,.docx,.jpeg,.jpg,.png"
               onChange={(e) => setBrochureFile(e.target.files?.[0] ?? null)}
-              className="text-[13px] text-[#3A3560]"
+              className="cursor-pointer text-[13px] text-[#3A3560] file:mr-3 file:cursor-pointer file:rounded-lg file:border-0 file:bg-[#7C6AE8] file:px-3 file:py-2 file:text-[13px] file:font-medium file:text-white hover:file:bg-[#6C5AD8]"
             />
             <p className="mt-1 text-[12px] text-[#A8A2C9]">
               Max File size: 5MB. Allowed: .pdf, .csv, .zip, .doc, .docx, .jpeg, .jpg, .png
@@ -524,7 +577,7 @@ function POSAddProductPage() {
               type="file"
               accept="image/*"
               onChange={(e) => handleImageChange(e.target.files?.[0] ?? null)}
-              className="mt-2 text-[13px] text-[#3A3560]"
+              className="mt-2 cursor-pointer text-[13px] text-[#3A3560] file:mr-3 file:cursor-pointer file:rounded-lg file:border-0 file:bg-[#7C6AE8] file:px-3 file:py-2 file:text-[13px] file:font-medium file:text-white hover:file:bg-[#6C5AD8]"
             />
             <p className="mt-1 text-[12px] text-[#A8A2C9]">
               Max 5MB, 1:1 aspect ratio recommended. Default placeholder shown if none uploaded.
@@ -868,7 +921,7 @@ function POSAddProductPage() {
                     type="file"
                     accept="image/*"
                     onChange={(e) => setCoverImageFile(e.target.files?.[0] ?? null)}
-                    className="text-[13px] text-[#3A3560]"
+                    className="cursor-pointer text-[13px] text-[#3A3560] file:mr-3 file:cursor-pointer file:rounded-lg file:border-0 file:bg-[#7C6AE8] file:px-3 file:py-2 file:text-[13px] file:font-medium file:text-white hover:file:bg-[#6C5AD8]"
                   />
                 </div>
                 <div>
@@ -879,7 +932,7 @@ function POSAddProductPage() {
                     type="file"
                     accept="image/*"
                     onChange={(e) => setHoverImageFile(e.target.files?.[0] ?? null)}
-                    className="text-[13px] text-[#3A3560]"
+                    className="cursor-pointer text-[13px] text-[#3A3560] file:mr-3 file:cursor-pointer file:rounded-lg file:border-0 file:bg-[#7C6AE8] file:px-3 file:py-2 file:text-[13px] file:font-medium file:text-white hover:file:bg-[#6C5AD8]"
                   />
                 </div>
                 <div>
@@ -891,7 +944,7 @@ function POSAddProductPage() {
                     accept="image/*"
                     multiple
                     onChange={(e) => handleGalleryFilesChange(e.target.files)}
-                    className="text-[13px] text-[#3A3560]"
+                    className="cursor-pointer text-[13px] text-[#3A3560] file:mr-3 file:cursor-pointer file:rounded-lg file:border-0 file:bg-[#7C6AE8] file:px-3 file:py-2 file:text-[13px] file:font-medium file:text-white hover:file:bg-[#6C5AD8]"
                   />
                   {galleryFiles.length > 0 && (
                     <ul className="mt-2 flex flex-col gap-1">
@@ -1000,6 +1053,27 @@ function POSAddProductPage() {
           defaultCategoryId={storefrontCategoryId}
           onClose={() => setQuickAddStorefrontType(false)}
           onCreated={handleStorefrontTypeCreated}
+        />
+      )}
+      {quickAddCategory && (
+        <CategoryFormModal
+          mode="add"
+          onClose={() => setQuickAddCategory(false)}
+          onCreated={handleCategoryCreated}
+        />
+      )}
+      {quickAddSubcategory && (
+        <CategoryFormModal
+          mode="add"
+          defaultParent={categoryId}
+          onClose={() => setQuickAddSubcategory(false)}
+          onCreated={handleSubcategoryCreated}
+        />
+      )}
+      {quickAddTaxRate && (
+        <TaxRateFormModal
+          onClose={() => setQuickAddTaxRate(false)}
+          onCreated={handleTaxRateCreated}
         />
       )}
     </div>

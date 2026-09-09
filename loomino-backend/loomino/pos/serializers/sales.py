@@ -2,7 +2,26 @@ from rest_framework import serializers
 
 from django.db.models import Sum
 
-from ..models import Sale, SaleItem, SaleReturn, SaleReturnItem, Contact, Location, TaxRate
+from ..models import Sale, SaleItem, SaleReturn, SaleReturnItem, SalePayment, Contact, Location, TaxRate
+
+
+class SalePaymentRowSerializer(serializers.ModelSerializer):
+    payment_method_display = serializers.CharField(
+        source="get_payment_method_display", read_only=True
+    )
+
+    class Meta:
+        model = SalePayment
+        fields = [
+            "id",
+            "reference_no",
+            "amount",
+            "paid_on",
+            "payment_method",
+            "payment_method_display",
+            "payment_reference",
+            "payment_note",
+        ]
 
 
 class SaleListSerializer(serializers.ModelSerializer):
@@ -49,6 +68,7 @@ class SaleItemDetailSerializer(serializers.ModelSerializer):
 
 class SaleDetailSerializer(serializers.ModelSerializer):
     items = SaleItemDetailSerializer(many=True, read_only=True)
+    payments = SalePaymentRowSerializer(many=True, read_only=True)
     location_name = serializers.CharField(source="location.name", read_only=True)
     customer_name = serializers.CharField(read_only=True)
     customer_phone = serializers.CharField(read_only=True)
@@ -67,7 +87,7 @@ class SaleDetailSerializer(serializers.ModelSerializer):
             "shipping_documents_url", "additional_expenses_note", "additional_expenses_amount",
             "total", "paid_amount", "payment_method", "paid_on", "payment_note",
             "due_amount", "total_quantity", "shipped_quantity", "quantity_remaining",
-            "items", "created_at",
+            "items", "payments", "created_at",
         ]
 
     def get_attached_document_url(self, obj):

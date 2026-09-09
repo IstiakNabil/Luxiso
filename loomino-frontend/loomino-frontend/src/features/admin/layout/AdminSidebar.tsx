@@ -65,7 +65,7 @@ function AdminSidebar() {
       {/* Logo */}
       <div className="flex h-[80px] items-center border-b border-[#E4DACA] px-6">
         <span className="text-[22px] font-bold tracking-[1px] text-[#8A6A2E]">
-          LOOMINO
+          LUXYSO
         </span>
       </div>
 
@@ -169,8 +169,8 @@ function AdminSidebar() {
             <p className="truncate text-[13px] font-semibold text-[#3A2E1B]">
               {user
                 ? `${user.first_name} ${user.last_name}`.trim() ||
-                  "Loomino"
-                : "Loomino"}
+                  "Luxyso"
+                : "Luxyso"}
             </p>
             <p className="text-[11px] text-[#B08C7A]">
               Administrator

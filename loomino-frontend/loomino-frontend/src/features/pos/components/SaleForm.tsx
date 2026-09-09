@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Plus, Trash2, Search } from "lucide-react";
@@ -9,7 +9,7 @@ import { usePOSLocations } from "../hooks/useDashboard";
 import { useContacts } from "../hooks/useContacts";
 import { useTaxRates } from "../hooks/useProducts";
 import { useVariantSearch } from "../hooks/usePurchases";
-import { useCreateSale } from "../hooks/useSales";
+import { useCreateSale, useUpdateSale, useSaleDetail } from "../hooks/useSales";
 import ContactFormModal from "./ContactFormModal";
 import { formatMoney } from "../utils/format";
 import type {
@@ -43,9 +43,16 @@ interface SaleFormProps {
   title: string;
   submitLabel: string;
   redirectPath: string;
+  /** "edit" loads an existing Final sale's items/order fields via
+   * saleId and PATCHes on submit instead of POSTing a new sale. The
+   * payment section is hidden in edit mode -- editing an invoice
+   * never records a new payment, only changes what's owed; use the
+   * separate Add Payment flow on Sale Detail for that. */
+  mode?: "add" | "edit";
+  saleId?: number;
 }
 
-function SaleForm({ defaultStatus, title, submitLabel, redirectPath }: SaleFormProps) {
+function SaleForm({ defaultStatus, title, submitLabel, redirectPath, mode = "add", saleId }: SaleFormProps) {
   const navigate = useNavigate();
   const { me } = usePOSAuth();
   const sym = me?.has_pos_access ? me.business.currency_symbol : "";
@@ -54,6 +61,8 @@ function SaleForm({ defaultStatus, title, submitLabel, redirectPath }: SaleFormP
   const customersQuery = useContacts("customer", 1, "", undefined);
   const taxRatesQuery = useTaxRates();
   const createMutation = useCreateSale();
+  const updateMutation = useUpdateSale();
+  const existingSaleQuery = useSaleDetail(mode === "edit" ? (saleId ?? null) : null);
 
   const [customerId, setCustomerId] = useState<number | "">("");
   const [quickAddCustomer, setQuickAddCustomer] = useState(false);
@@ -65,6 +74,7 @@ function SaleForm({ defaultStatus, title, submitLabel, redirectPath }: SaleFormP
 
   const [productSearch, setProductSearch] = useState("");
   const [items, setItems] = useState<LineItem[]>([]);
+  const [loadedExistingItems, setLoadedExistingItems] = useState(false);
 
   const [discountType, setDiscountType] = useState<DiscountTypeValue>("none");
   const [discountAmount, setDiscountAmount] = useState("0");
@@ -78,6 +88,39 @@ function SaleForm({ defaultStatus, title, submitLabel, redirectPath }: SaleFormP
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethodValue>("cash");
   const [paidOn, setPaidOn] = useState(nowLocalDateTime());
   const [paymentNote, setPaymentNote] = useState("");
+
+  // Populate everything from the existing sale once, the first time
+  // it loads -- never again, so the person's own edits aren't
+  // clobbered by a background refetch.
+  useEffect(() => {
+    if (mode !== "edit" || !existingSaleQuery.data || loadedExistingItems) return;
+    const sale = existingSaleQuery.data;
+    setCustomerId(sale.customer ?? "");
+    setInvoiceNo(sale.invoice_no);
+    setSaleDate(sale.sale_date.slice(0, 16));
+    setLocationId(sale.location);
+    setPayTermDays(sale.pay_term_days ? String(sale.pay_term_days) : "");
+    setDiscountType(sale.discount_type);
+    setDiscountAmount(sale.discount_amount);
+    setTaxRateId(sale.tax_rate ?? "");
+    setNotes(sale.notes);
+    setShippingDetails(sale.shipping_details);
+    setShippingAddress(sale.shipping_address);
+    setShippingCharges(sale.shipping_charges);
+    setItems(
+      sale.items.map((it) => ({
+        key: `existing-${it.id}`,
+        variant: it.variant,
+        productLabel: it.product_name + (it.variant_name ? ` — ${it.variant_name}` : ""),
+        skuLabel: it.sku,
+        quantity: it.quantity,
+        unit_price: it.unit_price,
+        discount_amount: it.discount_amount,
+      })),
+    );
+    setLoadedExistingItems(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [existingSaleQuery.data, mode, loadedExistingItems]);
 
   const variantQuery = useVariantSearch(productSearch);
 
@@ -141,6 +184,41 @@ function SaleForm({ defaultStatus, title, submitLabel, redirectPath }: SaleFormP
       return;
     }
 
+    const itemsPayload = items.map((it) => ({
+      variant: it.variant,
+      quantity: it.quantity,
+      unit_price: it.unit_price,
+      discount_amount: it.discount_amount || "0",
+    }));
+
+    if (mode === "edit") {
+      if (!saleId) return;
+      try {
+        const sale = await updateMutation.mutateAsync({
+          id: saleId,
+          payload: {
+            customer: customerId || null,
+            location: locationId,
+            sale_date: new Date(saleDate).toISOString(),
+            pay_term_days: payTermDays || null,
+            discount_type: discountType,
+            discount_amount: discountAmount || "0",
+            tax_rate: taxRateId || null,
+            notes,
+            shipping_details: shippingDetails,
+            shipping_address: shippingAddress,
+            shipping_charges: shippingCharges || "0",
+            items: itemsPayload,
+          },
+        });
+        toast.success(`${sale.invoice_no} updated.`);
+        navigate(redirectPath);
+      } catch (err) {
+        toast.error(getApiErrorMessage(err));
+      }
+      return;
+    }
+
     const formData = new FormData();
     if (customerId) formData.append("customer", String(customerId));
     formData.append("location", String(locationId));
@@ -160,17 +238,7 @@ function SaleForm({ defaultStatus, title, submitLabel, redirectPath }: SaleFormP
     formData.append("payment_note", paymentNote);
     formData.append("notes", notes);
     formData.append("paid_amount", paidAmount || "0");
-    formData.append(
-      "items",
-      JSON.stringify(
-        items.map((it) => ({
-          variant: it.variant,
-          quantity: it.quantity,
-          unit_price: it.unit_price,
-          discount_amount: it.discount_amount || "0",
-        })),
-      ),
-    );
+    formData.append("items", JSON.stringify(itemsPayload));
 
     try {
       const sale = await createMutation.mutateAsync(formData);
@@ -478,8 +546,10 @@ function SaleForm({ defaultStatus, title, submitLabel, redirectPath }: SaleFormP
         </div>
       </div>
 
-      {/* Payment */}
-      <div className="rounded-2xl border border-[#E7E4F3] bg-white p-5">
+      {/* Payment -- only for a new sale; editing never records a new
+          payment, use Add Payment on Sale Detail for that. */}
+      {mode !== "edit" && (
+        <div className="rounded-2xl border border-[#E7E4F3] bg-white p-5">
         <h3 className="mb-4 text-[14px] font-semibold text-[#221F35]">Add Payment</h3>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <label className="block">
@@ -537,6 +607,7 @@ function SaleForm({ defaultStatus, title, submitLabel, redirectPath }: SaleFormP
           Balance: {formatMoney(computed.due, sym)}
         </div>
       </div>
+      )}
 
       <div className="flex justify-end gap-2">
         <button
@@ -549,10 +620,10 @@ function SaleForm({ defaultStatus, title, submitLabel, redirectPath }: SaleFormP
         <button
           type="button"
           onClick={handleSubmit}
-          disabled={createMutation.isPending}
+          disabled={createMutation.isPending || updateMutation.isPending}
           className="rounded-lg bg-[#7C6AE8] px-5 py-2.5 text-[13px] font-semibold text-white hover:bg-[#6C5AD8] disabled:opacity-60"
         >
-          {createMutation.isPending ? "Saving…" : submitLabel}
+          {createMutation.isPending || updateMutation.isPending ? "Saving…" : submitLabel}
         </button>
       </div>
 

@@ -8,10 +8,30 @@ from ..models import (
     PurchaseItem,
     PurchaseReturn,
     PurchaseReturnItem,
+    PurchasePayment,
     Contact,
     Location,
     TaxRate,
 )
+
+
+class PurchasePaymentRowSerializer(serializers.ModelSerializer):
+    payment_method_display = serializers.CharField(
+        source="get_payment_method_display", read_only=True
+    )
+
+    class Meta:
+        model = PurchasePayment
+        fields = [
+            "id",
+            "reference_no",
+            "amount",
+            "paid_on",
+            "payment_method",
+            "payment_method_display",
+            "payment_reference",
+            "payment_note",
+        ]
 
 
 class PurchaseListSerializer(serializers.ModelSerializer):
@@ -83,6 +103,7 @@ class PurchaseItemDetailSerializer(serializers.ModelSerializer):
 
 class PurchaseDetailSerializer(serializers.ModelSerializer):
     items = PurchaseItemDetailSerializer(many=True, read_only=True)
+    payments = PurchasePaymentRowSerializer(many=True, read_only=True)
     location_name = serializers.CharField(source="location.name", read_only=True)
     supplier_name = serializers.CharField(source="supplier.name", read_only=True)
     tax_name = serializers.CharField(source="tax_rate.name", default=None, read_only=True)
@@ -121,6 +142,7 @@ class PurchaseDetailSerializer(serializers.ModelSerializer):
             "due_amount",
             "notes",
             "items",
+            "payments",
             "created_at",
         ]
 

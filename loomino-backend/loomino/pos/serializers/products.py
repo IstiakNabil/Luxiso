@@ -76,12 +76,11 @@ class ProductListSerializer(serializers.ModelSerializer):
     def get_current_stock(self, obj):
         if not obj.manage_stock:
             return "N/A"
-        location_id = self.context.get("location_id")
+        # Stock is shared across every location now -- no location-based
+        # filtering needed, just the one number per variant.
         total = Decimal("0")
         for variant in obj.variants.all():
             for sl in variant.stock_levels.all():
-                if location_id and str(sl.location_id) != str(location_id):
-                    continue
                 total += sl.quantity
         unit = obj.unit.short_name if obj.unit else ""
         return f"{total:g} {unit}".strip()

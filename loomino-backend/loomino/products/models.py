@@ -311,7 +311,7 @@ class ProductVariant(models.Model):
 
     # Stock here is a synced cache, not the source of truth -- see
     # core.stock_service._sync_storefront_stock. The real, shared
-    # quantity lives in pos.StockLevel at the online-channel Location.
+    # quantity lives in pos.StockLevel, shared across every location.
     pos_source = models.OneToOneField(
         "pos.POSVariant",
         on_delete=models.SET_NULL,

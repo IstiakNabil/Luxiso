@@ -41,6 +41,7 @@ import type {
   PurchaseListRow,
   PurchaseDetail,
   PurchaseFilters,
+  PaymentMethodValue,
   PurchaseReturnRow,
   ReturnableItem,
   PurchaseReturnDetail,
@@ -64,6 +65,7 @@ import type {
   SalePaymentReportRow,
   ProductPurchaseReportRow,
   ExpenseReport,
+  ProfitLossReport,
   ReportFilters,
   StockReportResponse,
   ProductSaleReportRow,
@@ -598,6 +600,20 @@ export async function createPurchase(formData: FormData): Promise<PurchaseDetail
   return res.data;
 }
 
+export async function addPurchasePayment(
+  purchaseId: number,
+  payload: {
+    amount: string;
+    paid_on?: string;
+    payment_method?: PaymentMethodValue;
+    payment_reference?: string;
+    payment_note?: string;
+  },
+): Promise<PurchaseDetail> {
+  const res = await api.post(`/pos/purchases/${purchaseId}/payments/`, payload);
+  return res.data;
+}
+
 export async function getPurchaseReturns(
   page: number,
   filters?: { location?: number; date_from?: string; date_to?: string },
@@ -658,8 +674,27 @@ export async function createSale(formData: FormData): Promise<SaleDetail> {
   return res.data;
 }
 
+export async function updateSale(id: number, payload: Record<string, unknown>): Promise<SaleDetail> {
+  const res = await api.patch(`/pos/sales/${id}/`, payload);
+  return res.data;
+}
+
 export async function deleteSale(id: number): Promise<void> {
   await api.delete(`/pos/sales/${id}/`);
+}
+
+export async function addSalePayment(
+  saleId: number,
+  payload: {
+    amount: string;
+    paid_on?: string;
+    payment_method?: PaymentMethodValue;
+    payment_reference?: string;
+    payment_note?: string;
+  },
+): Promise<SaleDetail> {
+  const res = await api.post(`/pos/sales/${saleId}/payments/`, payload);
+  return res.data;
 }
 
 export async function getReturnableSaleItems(saleId: number): Promise<ReturnableSaleItem[]> {
@@ -856,6 +891,17 @@ export async function getExpenseReport(
   if (filters?.date_from) params.date_from = filters.date_from;
   if (filters?.date_to) params.date_to = filters.date_to;
   const res = await api.get("/pos/reports/expenses/", { params });
+  return res.data;
+}
+
+export async function getProfitLossReport(
+  filters?: { location?: number; date_from?: string; date_to?: string },
+): Promise<ProfitLossReport> {
+  const params: Record<string, string | number> = {};
+  if (filters?.location) params.location = filters.location;
+  if (filters?.date_from) params.date_from = filters.date_from;
+  if (filters?.date_to) params.date_to = filters.date_to;
+  const res = await api.get("/pos/reports/profit-loss/", { params });
   return res.data;
 }
 

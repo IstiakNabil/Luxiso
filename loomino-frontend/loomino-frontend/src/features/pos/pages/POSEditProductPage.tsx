@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, Link } from "react-router-dom";
 import { toast } from "sonner";
 import { Upload, Plus, Trash2 } from "lucide-react";
 
@@ -16,7 +16,9 @@ import {
 } from "../hooks/useProducts";
 import StorefrontCategoryFormModal from "../components/StorefrontCategoryFormModal";
 import StorefrontTypeFormModal from "../components/StorefrontTypeFormModal";
-import type { ProductDetail, StorefrontCategory, StorefrontProductType } from "../types/pos";
+import CategoryFormModal from "../components/CategoryFormModal";
+import TaxRateFormModal from "../components/TaxRateFormModal";
+import type { ProductDetail, StorefrontCategory, StorefrontProductType, Category, TaxRate } from "../types/pos";
 
 function Field({
   label,
@@ -143,6 +145,8 @@ function EditProductForm({ product }: { product: ProductDetail }) {
   );
   const [quickAddStorefrontCategory, setQuickAddStorefrontCategory] = useState(false);
   const [quickAddStorefrontType, setQuickAddStorefrontType] = useState(false);
+  const [quickAddCategory, setQuickAddCategory] = useState(false);
+  const [quickAddTaxRate, setQuickAddTaxRate] = useState(false);
 
   const storefrontTypesQuery = useStorefrontTypes(
     storefrontCategoryId ? storefrontCategoryId : undefined,
@@ -167,6 +171,12 @@ function EditProductForm({ product }: { product: ProductDetail }) {
   };
   const handleStorefrontTypeCreated = (type: StorefrontProductType) => {
     setStorefrontTypeId(type.id);
+  };
+  const handleCategoryCreated = (category: Category) => {
+    setCategoryId(category.id);
+  };
+  const handleTaxRateCreated = (taxRate: TaxRate) => {
+    setTaxId(taxRate.id);
   };
 
   const handleImageChange = (file: File | null) => {
@@ -251,14 +261,38 @@ function EditProductForm({ product }: { product: ProductDetail }) {
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <Field label="Product Name" value={name} onChange={setName} />
           <Select label="Unit" value={unitId} onChange={setUnitId} options={unitsQuery.data ?? []} />
-          <Select label="Category" value={categoryId} onChange={setCategoryId} options={categoriesQuery.data ?? []} />
+          <div className="flex items-end gap-2">
+            <div className="flex-1">
+              <Select label="Category" value={categoryId} onChange={setCategoryId} options={categoriesQuery.data ?? []} />
+            </div>
+            <button
+              type="button"
+              onClick={() => setQuickAddCategory(true)}
+              className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-lg bg-[#7C6AE8] text-white hover:bg-[#6C5AD8]"
+              title="Add new category"
+            >
+              <Plus size={16} />
+            </button>
+          </div>
           <Select label="Brand" value={brandId} onChange={setBrandId} options={brandsQuery.data ?? []} />
-          <Select
-            label="Tax"
-            value={taxId}
-            onChange={setTaxId}
-            options={(taxRatesQuery.data ?? []).map((t) => ({ id: t.id, name: `${t.name} (${t.rate}%)` }))}
-          />
+          <div className="flex items-end gap-2">
+            <div className="flex-1">
+              <Select
+                label="Tax"
+                value={taxId}
+                onChange={setTaxId}
+                options={(taxRatesQuery.data ?? []).map((t) => ({ id: t.id, name: `${t.name} (${t.rate}%)` }))}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => setQuickAddTaxRate(true)}
+              className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-lg bg-[#7C6AE8] text-white hover:bg-[#6C5AD8]"
+              title="Add new tax rate"
+            >
+              <Plus size={16} />
+            </button>
+          </div>
           <Field label="Alert Quantity" value={alertQuantity} onChange={setAlertQuantity} type="number" />
         </div>
 
@@ -298,7 +332,7 @@ function EditProductForm({ product }: { product: ProductDetail }) {
             type="file"
             accept="image/*"
             onChange={(e) => handleImageChange(e.target.files?.[0] ?? null)}
-            className="text-[13px] text-[#3A3560]"
+            className="cursor-pointer text-[13px] text-[#3A3560] file:mr-3 file:cursor-pointer file:rounded-lg file:border-0 file:bg-[#7C6AE8] file:px-3 file:py-2 file:text-[13px] file:font-medium file:text-white hover:file:bg-[#6C5AD8]"
           />
         </div>
       </div>
@@ -475,7 +509,7 @@ function EditProductForm({ product }: { product: ProductDetail }) {
                     type="file"
                     accept="image/*"
                     onChange={(e) => setCoverImageFile(e.target.files?.[0] ?? null)}
-                    className="text-[13px] text-[#3A3560]"
+                    className="cursor-pointer text-[13px] text-[#3A3560] file:mr-3 file:cursor-pointer file:rounded-lg file:border-0 file:bg-[#7C6AE8] file:px-3 file:py-2 file:text-[13px] file:font-medium file:text-white hover:file:bg-[#6C5AD8]"
                   />
                 </div>
                 <div>
@@ -486,7 +520,7 @@ function EditProductForm({ product }: { product: ProductDetail }) {
                     type="file"
                     accept="image/*"
                     onChange={(e) => setHoverImageFile(e.target.files?.[0] ?? null)}
-                    className="text-[13px] text-[#3A3560]"
+                    className="cursor-pointer text-[13px] text-[#3A3560] file:mr-3 file:cursor-pointer file:rounded-lg file:border-0 file:bg-[#7C6AE8] file:px-3 file:py-2 file:text-[13px] file:font-medium file:text-white hover:file:bg-[#6C5AD8]"
                   />
                 </div>
                 <div>
@@ -498,7 +532,7 @@ function EditProductForm({ product }: { product: ProductDetail }) {
                     accept="image/*"
                     multiple
                     onChange={(e) => handleGalleryFilesChange(e.target.files)}
-                    className="text-[13px] text-[#3A3560]"
+                    className="cursor-pointer text-[13px] text-[#3A3560] file:mr-3 file:cursor-pointer file:rounded-lg file:border-0 file:bg-[#7C6AE8] file:px-3 file:py-2 file:text-[13px] file:font-medium file:text-white hover:file:bg-[#6C5AD8]"
                   />
                   {galleryFiles.length > 0 && (
                     <ul className="mt-2 flex flex-col gap-1">
@@ -556,10 +590,18 @@ function EditProductForm({ product }: { product: ProductDetail }) {
       </div>
 
       <div className="rounded-2xl border border-[#E7E4F3] bg-white p-5">
-        <h3 className="mb-3 text-[14px] font-semibold text-[#221F35]">Variants</h3>
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-[14px] font-semibold text-[#221F35]">Variants</h3>
+          <Link
+            to={`/admin/pos/products/variations?product=${product.id}`}
+            className="rounded-lg bg-[#7C6AE8] px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-[#6C5AD8]"
+          >
+            Manage Variants (Color, Size, Pricing)
+          </Link>
+        </div>
         <p className="mb-3 text-[12px] text-[#A8A2C9]">
-          Variant names/pricing and stock adjustments will move to their own Variations and
-          Stock Adjustment pages — read-only here for now.
+          Read-only here — add, edit, or remove a variant's color, size, and pricing on the
+          Variations page.
         </p>
         <div className="flex flex-col divide-y divide-[#F5F4FA]">
           {product.variants.map((v) => (
@@ -607,6 +649,19 @@ function EditProductForm({ product }: { product: ProductDetail }) {
           defaultCategoryId={storefrontCategoryId}
           onClose={() => setQuickAddStorefrontType(false)}
           onCreated={handleStorefrontTypeCreated}
+        />
+      )}
+      {quickAddCategory && (
+        <CategoryFormModal
+          mode="add"
+          onClose={() => setQuickAddCategory(false)}
+          onCreated={handleCategoryCreated}
+        />
+      )}
+      {quickAddTaxRate && (
+        <TaxRateFormModal
+          onClose={() => setQuickAddTaxRate(false)}
+          onCreated={handleTaxRateCreated}
         />
       )}
     </div>

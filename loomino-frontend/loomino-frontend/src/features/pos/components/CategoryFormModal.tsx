@@ -9,10 +9,14 @@ import type { Category } from "../types/pos";
 interface CategoryFormModalProps {
   mode: "add" | "edit";
   category?: Category;
+  /** Pre-selects the Parent Category when adding a subcategory from
+   * a context where a category is already chosen (e.g. Add Product). */
+  defaultParent?: number | "";
   onClose: () => void;
+  onCreated?: (category: Category) => void;
 }
 
-function CategoryFormModal({ mode, category, onClose }: CategoryFormModalProps) {
+function CategoryFormModal({ mode, category, defaultParent, onClose, onCreated }: CategoryFormModalProps) {
   const categoriesQuery = useCategories();
   const topLevelCategories = (categoriesQuery.data ?? []).filter(
     (c) => c.parent === null && c.id !== category?.id,
@@ -21,7 +25,7 @@ function CategoryFormModal({ mode, category, onClose }: CategoryFormModalProps) 
   const [name, setName] = useState(category?.name ?? "");
   const [categoryCode, setCategoryCode] = useState(category?.category_code ?? "");
   const [description, setDescription] = useState(category?.description ?? "");
-  const [parent, setParent] = useState<number | "">(category?.parent ?? "");
+  const [parent, setParent] = useState<number | "">(category?.parent ?? defaultParent ?? "");
   const [isActive, setIsActive] = useState(category?.is_active ?? true);
 
   const createMutation = useCreateCategory();
@@ -35,13 +39,14 @@ function CategoryFormModal({ mode, category, onClose }: CategoryFormModalProps) 
     }
     try {
       if (mode === "add") {
-        await createMutation.mutateAsync({
+        const created = await createMutation.mutateAsync({
           name,
           category_code: categoryCode,
           description,
           parent: parent === "" ? null : parent,
         });
         toast.success(`${name} added.`);
+        onCreated?.(created);
       } else if (category) {
         await updateMutation.mutateAsync({
           id: category.id,

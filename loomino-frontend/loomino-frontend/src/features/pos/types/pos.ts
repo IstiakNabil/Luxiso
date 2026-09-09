@@ -79,7 +79,6 @@ export interface PurchasePaymentDueRow {
 export interface ProductStockAlertRow {
   id: number;
   product: string;
-  location: string;
   current_stock: string;
   unit: string;
 }
@@ -460,7 +459,7 @@ export interface VariationRow {
   selling_price: string;
   alert_quantity: string | null;
   is_active: boolean;
-  total_stock: string;
+  stock: string;
   publish_warning?: string;
 }
 
@@ -528,6 +527,17 @@ export interface PurchaseItemDetail {
   exp_date: string | null;
 }
 
+export interface PurchasePaymentRow {
+  id: number;
+  reference_no: string;
+  amount: string;
+  paid_on: string;
+  payment_method: PaymentMethodValue;
+  payment_method_display: string;
+  payment_reference: string;
+  payment_note: string;
+}
+
 export interface PurchaseDetail {
   id: number;
   reference_no: string;
@@ -559,6 +569,7 @@ export interface PurchaseDetail {
   due_amount: string;
   notes: string;
   items: PurchaseItemDetail[];
+  payments: PurchasePaymentRow[];
   created_at: string;
 }
 
@@ -677,6 +688,17 @@ export interface SaleItemDetail {
   subtotal: string;
 }
 
+export interface SalePaymentRow {
+  id: number;
+  reference_no: string;
+  amount: string;
+  paid_on: string;
+  payment_method: PaymentMethodValue;
+  payment_method_display: string;
+  payment_reference: string;
+  payment_note: string;
+}
+
 export interface SaleDetail {
   id: number;
   invoice_no: string;
@@ -716,6 +738,7 @@ export interface SaleDetail {
   shipped_quantity: string;
   quantity_remaining: string;
   items: SaleItemDetail[];
+  payments: SalePaymentRow[];
   created_at: string;
 }
 
@@ -1033,6 +1056,19 @@ export interface ExpenseReport {
   grand_total: number;
 }
 
+export interface ProfitLossReport {
+  total_sales: string;
+  total_sell_return: string;
+  net_sales: string;
+  total_cogs: string;
+  gross_profit: string;
+  total_expense: string;
+  stock_adjustment_loss: string;
+  stock_adjustment_gain: string;
+  net_stock_adjustment_impact: string;
+  net_profit: string;
+}
+
 export interface ReportFilters {
   search?: string;
   supplier?: number;
@@ -1050,7 +1086,6 @@ export interface ReportFilters {
 export interface StockReportRow {
   sku: string;
   product_name: string;
-  location_name: string;
   unit_price: string;
   current_stock: string;
   unit_name: string;
