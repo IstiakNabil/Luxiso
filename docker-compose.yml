@@ -15,7 +15,12 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+  
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
 
+  
   backend:
     build:
       context: ./loomino-backend/loomino
@@ -28,6 +33,9 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_started
+ 
     command: >
       sh -c "python manage.py collectstatic --noinput &&
              python manage.py migrate &&
