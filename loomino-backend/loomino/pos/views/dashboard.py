@@ -221,8 +221,8 @@ class ProductStockAlertListView(ListAPIView):
     """
     GET /api/pos/dashboard/stock-alert/
 
-    Only shows a variant/location combo where current stock has
-    dropped to or below its alert threshold.
+    Only shows a variant where its single shared stock has dropped to
+    or below its alert threshold.
     """
 
     permission_classes = [IsAuthenticated, IsPOSStaff]
@@ -230,12 +230,7 @@ class ProductStockAlertListView(ListAPIView):
     pagination_class = POSResultsPagination
 
     def get_queryset(self):
-        qs = StockLevel.objects.select_related(
-            "variant", "variant__product", "location"
-        )
-        location_id = self.request.query_params.get("location")
-        if location_id:
-            qs = qs.filter(location_id=location_id)
+        qs = StockLevel.objects.select_related("variant", "variant__product")
 
         # Threshold comparison needs Python-side filtering since it
         # depends on a per-row fallback (variant.alert_quantity or
@@ -246,7 +241,7 @@ class ProductStockAlertListView(ListAPIView):
             if row.quantity <= (row.variant.effective_alert_quantity or 0)
         ]
         return StockLevel.objects.filter(id__in=low_ids).select_related(
-            "variant", "variant__product", "location"
+            "variant", "variant__product"
         )
 
 

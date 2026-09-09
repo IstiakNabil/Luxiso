@@ -113,8 +113,7 @@ class BatchAdmin(admin.ModelAdmin):
 
 @admin.register(StockLevel)
 class StockLevelAdmin(admin.ModelAdmin):
-    list_display = ("variant", "location", "quantity", "updated_at")
-    list_filter = ("location",)
+    list_display = ("variant", "quantity", "updated_at")
     search_fields = ("variant__sku", "variant__product__name")
 
 

@@ -145,8 +145,8 @@ export const POS_NAV: POSNavItem[] = [
       { label: "Trending Products", to: "/admin/pos/reports/trending-products" },
       { label: "Stock Adjustment Report", to: "/admin/pos/reports/stock-adjustments" },
       { label: "Stock Report", to: "/admin/pos/reports/stock" },
+      { label: "Profit / Loss Report", to: "/admin/pos/reports/profit-loss" },
       // Rest of this group is added as we build each remaining report:
-      // { label: "Profit / Loss Report", to: "/admin/pos/reports/profit-loss" },
       // { label: "Sales Representative Report", to: "/admin/pos/reports/sales-rep" },
       // { label: "Register Report", to: "/admin/pos/reports/register" },
       // { label: "Items Report", to: "/admin/pos/reports/items" },  -- deferred (see courier/website API note)

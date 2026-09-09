@@ -82,7 +82,7 @@ function AdminLogin() {
             <ShieldCheck size={28} className="text-white" />
           </div>
           <h1 className="text-[24px] font-bold tracking-[1px] text-[#8A6A2E]">
-            LOOMINO
+            LUXYSO
           </h1>
           <p className="mt-1 text-[13px] text-[#8A7C64]">
             Admin Panel — sign in to continue

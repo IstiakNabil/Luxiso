@@ -96,14 +96,11 @@ class ProductPurchaseReportSerializer(serializers.ModelSerializer):
 class StockReportRowSerializer(serializers.Serializer):
     """
     Backed by a plain dict built in the view (see StockReportView) --
-    one row per (variant, location) with values requiring several
-    correlated aggregates that are cleaner to assemble in Python than
-    to force into a single ORM annotation.
+    one row per variant, stock shared across every location.
     """
 
     sku = serializers.CharField()
     product_name = serializers.CharField()
-    location_name = serializers.CharField()
     unit_price = serializers.DecimalField(max_digits=12, decimal_places=2)
     current_stock = serializers.DecimalField(max_digits=12, decimal_places=2)
     unit_name = serializers.CharField()

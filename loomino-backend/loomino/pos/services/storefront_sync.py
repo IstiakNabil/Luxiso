@@ -22,9 +22,7 @@ class PublishValidationError(Exception):
 
 @transaction.atomic
 def sync_product_to_storefront(pos_product):
-    from django.core.exceptions import ObjectDoesNotExist
     from products.models import Product, ProductVariant, ProductImage, ProductFeature
-    from core.stock_service import get_online_location
     from pos.models import StockLevel
 
     if not pos_product.publish_online:
@@ -94,16 +92,6 @@ def sync_product_to_storefront(pos_product):
         ]
     )
 
-    online_location = None
-    try:
-        online_location = get_online_location()
-    except ObjectDoesNotExist:
-        raise PublishValidationError(
-            "No location is set as the online channel yet -- ask an Admin to check "
-            "\"This is the online store's location\" for one location under "
-            "Settings \u2192 Business Locations."
-        )
-
     for pos_variant in variants:
         if not (pos_variant.color_id and pos_variant.size_id):
             raise PublishValidationError(
@@ -121,9 +109,7 @@ def sync_product_to_storefront(pos_product):
                 is_active=pos_variant.is_active,
             ),
         )
-        stock_level = StockLevel.objects.filter(
-            variant=pos_variant, location=online_location
-        ).first()
+        stock_level = StockLevel.objects.filter(variant=pos_variant).first()
         storefront_variant.stock = int(stock_level.quantity) if stock_level else 0
         storefront_variant.save(update_fields=["stock"])
 

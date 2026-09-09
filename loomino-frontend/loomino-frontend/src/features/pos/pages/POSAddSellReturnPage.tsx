@@ -1,11 +1,11 @@
-import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Search } from "lucide-react";
 
 import { getApiErrorMessage } from "@/lib/apiError";
 import { usePOSAuth } from "../hooks/usePOSAuth";
-import { useSales, useReturnableSaleItems, useCreateSaleReturn } from "../hooks/useSales";
+import { useSales, useSaleDetail, useReturnableSaleItems, useCreateSaleReturn } from "../hooks/useSales";
 import { formatMoney } from "../utils/format";
 import type { SaleListRow } from "../types/pos";
 
@@ -16,6 +16,8 @@ function toNum(v: string): number {
 
 function POSAddSellReturnPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const preselectedSaleId = searchParams.get("sale");
   const { me } = usePOSAuth();
   const sym = me?.has_pos_access ? me.business.currency_symbol : "";
 
@@ -26,6 +28,33 @@ function POSAddSellReturnPage() {
   const [returnQty, setReturnQty] = useState<Record<number, string>>({});
 
   const saleSearchQuery = useSales(1, { search: saleSearch, status: "final" });
+  // Arriving via a "Return" link from a specific sale (e.g. Sale Detail)
+  // supplies ?sale=<id> -- fetch that exact sale so it's preselected
+  // instead of dropping the person into a blank search for an invoice
+  // they were already looking at.
+  const preselectedSaleQuery = useSaleDetail(
+    preselectedSaleId && !selectedSale ? Number(preselectedSaleId) : null,
+  );
+  useEffect(() => {
+    if (preselectedSaleQuery.data && !selectedSale) {
+      const sale = preselectedSaleQuery.data;
+      setSelectedSale({
+        id: sale.id,
+        invoice_no: sale.invoice_no,
+        sale_date: sale.sale_date,
+        customer_name: sale.customer_name,
+        location_name: sale.location_name,
+        status: sale.status,
+        payment_status: sale.payment_status,
+        total: sale.total,
+        due_amount: sale.due_amount,
+        total_quantity: sale.total_quantity,
+        added_by: "",
+      } as SaleListRow);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preselectedSaleQuery.data]);
+
   const returnableQuery = useReturnableSaleItems(selectedSale?.id ?? null);
   const createMutation = useCreateSaleReturn();
 

@@ -309,7 +309,7 @@ function VariantEditor({ productId }: { productId: number }) {
                       onChange={(v) => patchEdit(row.id, { selling_price: v })}
                     />
                   </td>
-                  <td className="px-4 py-2 text-[#726C8C]">{row.total_stock}</td>
+                  <td className="px-4 py-2 text-[#726C8C]">{row.stock}</td>
                   <td className="px-4 py-2">
                     <input
                       type="checkbox"
@@ -466,8 +466,9 @@ function VariantEditor({ productId }: { productId: number }) {
 
       <p className="flex items-center gap-1.5 text-[12px] text-[#A8A2C9]">
         <Package size={12} />
-        Deleting a variant with any sale/purchase history is blocked — set it to Inactive
-        instead. A product always needs at least one variant.
+        Stock is one shared number across every location and the online store — a sale
+        anywhere depletes the same total. Deleting a variant with any sale/purchase history
+        is blocked — set it to Inactive instead. A product always needs at least one variant.
       </p>
 
       <Link

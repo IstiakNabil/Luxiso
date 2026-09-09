@@ -1,11 +1,16 @@
-import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Search } from "lucide-react";
 
 import { getApiErrorMessage } from "@/lib/apiError";
 import { usePOSAuth } from "../hooks/usePOSAuth";
-import { usePurchases, useReturnableItems, useCreatePurchaseReturn } from "../hooks/usePurchases";
+import {
+  usePurchases,
+  usePurchaseDetail,
+  useReturnableItems,
+  useCreatePurchaseReturn,
+} from "../hooks/usePurchases";
 import { formatMoney } from "../utils/format";
 import type { PurchaseListRow } from "../types/pos";
 
@@ -16,6 +21,8 @@ function toNum(v: string): number {
 
 function POSAddPurchaseReturnPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const preselectedPurchaseId = searchParams.get("purchase");
   const { me } = usePOSAuth();
   const sym = me?.has_pos_access ? me.business.currency_symbol : "";
 
@@ -26,6 +33,32 @@ function POSAddPurchaseReturnPage() {
   const [returnQty, setReturnQty] = useState<Record<number, string>>({});
 
   const purchaseSearchQuery = usePurchases(1, { search: purchaseSearch });
+  // Arriving via a "Return" link from a specific purchase (e.g.
+  // Purchase Detail) supplies ?purchase=<id> -- fetch that exact
+  // purchase so it's preselected instead of dropping the person into
+  // a blank search for a reference number they were already looking at.
+  const preselectedPurchaseQuery = usePurchaseDetail(
+    preselectedPurchaseId && !selectedPurchase ? Number(preselectedPurchaseId) : null,
+  );
+  useEffect(() => {
+    if (preselectedPurchaseQuery.data && !selectedPurchase) {
+      const purchase = preselectedPurchaseQuery.data;
+      setSelectedPurchase({
+        id: purchase.id,
+        reference_no: purchase.reference_no,
+        purchase_date: purchase.purchase_date,
+        supplier_name: purchase.supplier_name,
+        location_name: purchase.location_name,
+        status: purchase.status,
+        payment_status: purchase.payment_status,
+        total: purchase.total,
+        due_amount: purchase.due_amount,
+        added_by: "",
+      } as PurchaseListRow);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preselectedPurchaseQuery.data]);
+
   const returnableQuery = useReturnableItems(selectedPurchase?.id ?? null);
   const createMutation = useCreatePurchaseReturn();
 

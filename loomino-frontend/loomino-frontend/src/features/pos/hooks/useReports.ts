@@ -5,6 +5,7 @@ import {
   getSalePaymentReport,
   getProductPurchaseReport,
   getExpenseReport,
+  getProfitLossReport,
   getStockReport,
   getProductSaleReport,
   getTrendingProducts,
@@ -42,6 +43,17 @@ export function useExpenseReport(filters: {
   return useQuery({
     queryKey: ["pos", "reports", "expenses", filters],
     queryFn: () => getExpenseReport(filters),
+  });
+}
+
+export function useProfitLossReport(filters: {
+  location?: number;
+  date_from?: string;
+  date_to?: string;
+}) {
+  return useQuery({
+    queryKey: ["pos", "reports", "profit-loss", filters],
+    queryFn: () => getProfitLossReport(filters),
   });
 }
 

@@ -14,7 +14,10 @@ from ..models import (
     PurchaseReturnItem,
     Expense,
     StockLevel,
+    Sale,
     SaleItem,
+    SaleReturn,
+    SaleReturnItem,
     StockAdjustmentItem,
     StockAdjustment,
     AdjustmentType,
@@ -223,17 +226,148 @@ class ExpenseReportView(APIView):
         return Response({"categories": categories, "grand_total": grand_total})
 
 
+class ProfitLossReportView(APIView):
+    """
+    GET /api/pos/reports/profit-loss/
+
+    Revenue is a Final sale's subtotal minus its order-level discount
+    (i.e. the taxable amount) -- tax collected is a pass-through, not
+    revenue, so it's deliberately excluded. A Sell Return reduces
+    revenue in the period the RETURN happened, not the period the
+    original sale did (standard accounting treatment), so returns are
+    filtered by their own return_date independent of which sales they
+    reference.
+
+    Cost of Goods Sold uses each variant's current purchase_price at
+    the time of the report, not whatever it actually cost when that
+    specific unit was originally bought -- this app doesn't do batch/
+    lot costing, so this is an approximation, not an exact historical
+    cost. A return reduces COGS back out, since that unit is back in
+    inventory and no longer "sold."
+
+    Net Profit subtracts total Expenses for the same period (refunds
+    net against the total, same as the Expense Report), and also
+    folds in Stock Adjustment impact: a Normal (write-off) adjustment
+    is real inventory value lost with nothing sold to show for it,
+    reducing profit (any amount_recovered on that write-off, e.g.
+    goods sold off as damaged or an insurance payout, offsets the
+    loss); an Abnormal (found-stock) adjustment is unexpected extra
+    inventory value, added as a gain.
+    """
+
+    permission_classes = [IsAuthenticated, CanViewReports]
+
+    def get(self, request):
+        params = request.query_params
+        date_from = params.get("date_from")
+        date_to = params.get("date_to")
+        location_id = params.get("location")
+
+        sales_qs = Sale.objects.filter(status=SaleStatus.FINAL)
+        returns_qs = SaleReturn.objects.all()
+        expenses_qs = Expense.objects.all()
+        adjustments_qs = StockAdjustment.objects.all()
+
+        if location_id:
+            sales_qs = sales_qs.filter(location_id=location_id)
+            returns_qs = returns_qs.filter(location_id=location_id)
+            expenses_qs = expenses_qs.filter(location_id=location_id)
+            adjustments_qs = adjustments_qs.filter(location_id=location_id)
+        if date_from:
+            sales_qs = sales_qs.filter(sale_date__date__gte=date_from)
+            returns_qs = returns_qs.filter(return_date__date__gte=date_from)
+            expenses_qs = expenses_qs.filter(expense_date__date__gte=date_from)
+            adjustments_qs = adjustments_qs.filter(adjustment_date__date__gte=date_from)
+        if date_to:
+            sales_qs = sales_qs.filter(sale_date__date__lte=date_to)
+            returns_qs = returns_qs.filter(return_date__date__lte=date_to)
+            expenses_qs = expenses_qs.filter(expense_date__date__lte=date_to)
+            adjustments_qs = adjustments_qs.filter(adjustment_date__date__lte=date_to)
+
+        total_sales = sales_qs.aggregate(
+            total=Coalesce(Sum(F("subtotal") - F("discount")), Value(0), output_field=DECIMAL_ZERO)
+        )["total"]
+
+        total_sell_return = returns_qs.aggregate(
+            total=Coalesce(Sum("total"), Value(0), output_field=DECIMAL_ZERO)
+        )["total"]
+
+        net_sales = total_sales - total_sell_return
+
+        cogs_sold = SaleItem.objects.filter(sale__in=sales_qs).aggregate(
+            total=Coalesce(
+                Sum(F("quantity") * F("variant__purchase_price")), Value(0), output_field=DECIMAL_ZERO
+            )
+        )["total"]
+
+        cogs_returned = SaleReturnItem.objects.filter(sale_return__in=returns_qs).aggregate(
+            total=Coalesce(
+                Sum(F("quantity") * F("variant__purchase_price")), Value(0), output_field=DECIMAL_ZERO
+            )
+        )["total"]
+
+        total_cogs = cogs_sold - cogs_returned
+        gross_profit = net_sales - total_cogs
+
+        signed_expense = Case(
+            When(is_refund=True, then=F("amount") * -1),
+            default=F("amount"),
+            output_field=DECIMAL_ZERO,
+        )
+        total_expense = expenses_qs.aggregate(
+            total=Coalesce(Sum(signed_expense), Value(0), output_field=DECIMAL_ZERO)
+        )["total"]
+
+        # Write-offs (Normal) are inventory value lost with no sale to
+        # show for it -- a real loss. Found stock (Abnormal) is
+        # unexpected extra inventory value -- a real gain. Any amount
+        # recovered on a write-off (e.g. sold off as damaged stock, or
+        # an insurance payout) offsets that specific loss.
+        adjustment_totals = adjustments_qs.aggregate(
+            total_normal=Coalesce(
+                Sum("total_amount", filter=Q(adjustment_type=AdjustmentType.NORMAL)),
+                Value(0), output_field=DECIMAL_ZERO,
+            ),
+            total_abnormal=Coalesce(
+                Sum("total_amount", filter=Q(adjustment_type=AdjustmentType.ABNORMAL)),
+                Value(0), output_field=DECIMAL_ZERO,
+            ),
+            total_recovered=Coalesce(
+                Sum("total_amount_recovered"), Value(0), output_field=DECIMAL_ZERO,
+            ),
+        )
+        stock_adjustment_loss = adjustment_totals["total_normal"] - adjustment_totals["total_recovered"]
+        stock_adjustment_gain = adjustment_totals["total_abnormal"]
+        net_stock_adjustment_impact = stock_adjustment_gain - stock_adjustment_loss
+
+        net_profit = gross_profit - total_expense + net_stock_adjustment_impact
+
+        return Response({
+            "total_sales": total_sales,
+            "total_sell_return": total_sell_return,
+            "net_sales": net_sales,
+            "total_cogs": total_cogs,
+            "gross_profit": gross_profit,
+            "total_expense": total_expense,
+            "stock_adjustment_loss": stock_adjustment_loss,
+            "stock_adjustment_gain": stock_adjustment_gain,
+            "net_stock_adjustment_impact": net_stock_adjustment_impact,
+            "net_profit": net_profit,
+        })
+
+
 class StockReportView(APIView):
     """
     GET /api/pos/reports/stock/
 
-    One row per (variant, location) with a non-zero stock history --
-    rows where the variant has never had any stock movement anywhere
-    are skipped so this doesn't list every never-stocked variant.
+    One row per variant -- stock is shared across every location now,
+    so there's no per-location split to report on here (Sale/Purchase/
+    Stock Adjustment location breakdowns are still available via
+    their own reports, which use StockMovement.location).
     "Total Unit Transferred" is always 0 -- inter-location stock
-    transfers aren't a feature yet, so there's nothing to sum.
+    transfers aren't a feature.
     "Total Unit Adjusted" here means Normal (write-off) Stock
-    Adjustment quantity for that variant+location specifically --
+    Adjustment quantity for that variant across every location --
     Abnormal (found-stock) adjustments aren't counted as "adjusted
     away" since nothing left the business.
     """
@@ -244,7 +378,7 @@ class StockReportView(APIView):
 
         qs = StockLevel.objects.select_related(
             "variant", "variant__product", "variant__product__unit",
-            "variant__product__category", "variant__product__brand", "location",
+            "variant__product__category", "variant__product__brand",
         )
         params = request.query_params
 
@@ -253,10 +387,6 @@ class StockReportView(APIView):
             qs = qs.filter(
                 Q(variant__product__name__icontains=search) | Q(variant__sku__icontains=search)
             )
-
-        location_id = params.get("location")
-        if location_id:
-            qs = qs.filter(location_id=location_id)
 
         category_id = params.get("category")
         if category_id:
@@ -285,21 +415,19 @@ class StockReportView(APIView):
             profit = sale_value - purchase_value
 
             sold = SaleItem.objects.filter(
-                variant=variant, sale__location=sl.location
+                variant=variant
             ).exclude(sale__status=SaleStatus.DRAFT).aggregate(
                 total=Coalesce(Sum("quantity"), Value(0), output_field=DECIMAL_ZERO)
             )["total"]
 
             adjusted = StockAdjustmentItem.objects.filter(
                 variant=variant,
-                stock_adjustment__location=sl.location,
                 stock_adjustment__adjustment_type=AdjustmentType.NORMAL,
             ).aggregate(total=Coalesce(Sum("quantity"), Value(0), output_field=DECIMAL_ZERO))["total"]
 
             rows.append({
                 "sku": variant.sku,
                 "product_name": variant.display_name,
-                "location_name": sl.location.name,
                 "unit_price": variant.selling_price,
                 "current_stock": qty,
                 "unit_name": variant.product.unit.short_name if variant.product.unit else "",

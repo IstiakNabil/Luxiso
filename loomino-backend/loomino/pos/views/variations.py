@@ -19,10 +19,11 @@ class VariationListCreateView(GenericAPIView):
     POST /api/pos/products/variations/                -- add a new variant
          to an existing product
 
-    A new variant is seeded with a zero StockLevel at every location
-    already tagged to the product -- same reasoning as product
-    creation: a row to increment later via Purchase/Stock Adjustment,
-    not an opening-stock quantity.
+    A new variant is seeded with a single zero StockLevel row -- same
+    reasoning as product creation: a row to increment later via
+    Purchase/Stock Adjustment, not an opening-stock quantity. Stock is
+    shared across every location, so there's one row, not one per
+    tagged location.
     """
 
     serializer_class = VariationRowSerializer
@@ -52,15 +53,8 @@ class VariationListCreateView(GenericAPIView):
             variant = serializer.save()
             product = variant.product
 
-            locations = list(product.locations.all())
-            if product.manage_stock and locations:
-                StockLevel.objects.bulk_create(
-                    [
-                        StockLevel(variant=variant, location=location, quantity=0)
-                        for location in locations
-                    ],
-                    ignore_conflicts=True,
-                )
+            if product.manage_stock:
+                StockLevel.objects.get_or_create(variant=variant, defaults={"quantity": 0})
 
         publish_warning = None
         if product.publish_online:

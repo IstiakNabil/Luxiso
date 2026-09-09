@@ -11,10 +11,11 @@ from rest_framework.response import Response
 
 from ..models import (
     StockAdjustment, StockAdjustmentItem, AdjustmentType,
-    POSVariant, StockLevel, StockMovement, StockMovementType,
+    POSVariant, StockMovementType,
 )
 from ..pagination import POSResultsPagination
 from ..permissions import IsPOSStaff, CanManageStockAdjustments
+from core.stock_service import deduct_stock, restock, InsufficientStockError
 from ..serializers.stock_adjustment import (
     StockAdjustmentListSerializer,
     StockAdjustmentDetailSerializer,
@@ -124,24 +125,6 @@ class StockAdjustmentListCreateView(GenericAPIView):
                     unit_price = _to_decimal(row.get("unit_price"))
                     subtotal = quantity * unit_price
 
-                    stock_level, _ = StockLevel.objects.get_or_create(
-                        variant=variant, location=adjustment.location
-                    )
-
-                    if adjustment_type == AdjustmentType.NORMAL:
-                        if quantity > stock_level.quantity:
-                            raise ValueError(
-                                f"Can't write off {quantity} of {variant} -- only "
-                                f"{stock_level.quantity} in stock at {adjustment.location.name}."
-                            )
-                        stock_level.quantity -= quantity
-                        movement_type = StockMovementType.ADJUSTMENT_DECREASE
-                    else:
-                        stock_level.quantity += quantity
-                        movement_type = StockMovementType.ADJUSTMENT_INCREASE
-
-                    stock_level.save(update_fields=["quantity"])
-
                     StockAdjustmentItem.objects.create(
                         stock_adjustment=adjustment,
                         variant=variant,
@@ -151,16 +134,31 @@ class StockAdjustmentListCreateView(GenericAPIView):
                     )
                     total_amount += subtotal
 
-                    StockMovement.objects.create(
-                        variant=variant,
-                        location=adjustment.location,
-                        movement_type=movement_type,
-                        quantity=quantity,
-                        reference_type="stock_adjustment",
-                        reference_id=adjustment.id,
-                        note=f"Stock adjustment {adjustment.reference_no}",
-                        created_by=request.user,
-                    )
+                    if adjustment_type == AdjustmentType.NORMAL:
+                        try:
+                            deduct_stock(
+                                variant=variant,
+                                location=adjustment.location,
+                                quantity=quantity,
+                                movement_type=StockMovementType.ADJUSTMENT_DECREASE,
+                                reference_type="stock_adjustment",
+                                reference_id=adjustment.id,
+                                note=f"Stock adjustment {adjustment.reference_no}",
+                                created_by=request.user,
+                            )
+                        except InsufficientStockError as e:
+                            raise ValueError(str(e))
+                    else:
+                        restock(
+                            variant=variant,
+                            location=adjustment.location,
+                            quantity=quantity,
+                            movement_type=StockMovementType.ADJUSTMENT_INCREASE,
+                            reference_type="stock_adjustment",
+                            reference_id=adjustment.id,
+                            note=f"Stock adjustment {adjustment.reference_no}",
+                            created_by=request.user,
+                        )
 
                 adjustment.total_amount = total_amount
                 adjustment.save(update_fields=["total_amount"])
@@ -206,35 +204,37 @@ class StockAdjustmentDetailView(GenericAPIView):
         try:
             with transaction.atomic():
                 for item in adjustment.items.all():
-                    stock_level, _ = StockLevel.objects.get_or_create(
-                        variant=item.variant, location=adjustment.location
-                    )
-
                     if adjustment.adjustment_type == AdjustmentType.NORMAL:
-                        stock_level.quantity += item.quantity
-                        reversal_type = StockMovementType.ADJUSTMENT_INCREASE
+                        # Original write-off decreased stock -- reversing adds it back.
+                        restock(
+                            variant=item.variant,
+                            location=adjustment.location,
+                            quantity=item.quantity,
+                            movement_type=StockMovementType.ADJUSTMENT_INCREASE,
+                            reference_type="stock_adjustment_reversal",
+                            reference_id=adjustment.id,
+                            note=f"Reversal of deleted adjustment {adjustment.reference_no}",
+                            created_by=request.user,
+                        )
                     else:
-                        if item.quantity > stock_level.quantity:
-                            raise ValueError(
-                                f"Can't undo this adjustment -- {item.variant} only has "
-                                f"{stock_level.quantity} in stock now, less than the "
-                                f"{item.quantity} this adjustment added."
+                        # Original found-stock increase -- reversing removes it,
+                        # blocked if it's since been sold/used elsewhere.
+                        try:
+                            deduct_stock(
+                                variant=item.variant,
+                                location=adjustment.location,
+                                quantity=item.quantity,
+                                movement_type=StockMovementType.ADJUSTMENT_DECREASE,
+                                reference_type="stock_adjustment_reversal",
+                                reference_id=adjustment.id,
+                                note=f"Reversal of deleted adjustment {adjustment.reference_no}",
+                                created_by=request.user,
                             )
-                        stock_level.quantity -= item.quantity
-                        reversal_type = StockMovementType.ADJUSTMENT_DECREASE
-
-                    stock_level.save(update_fields=["quantity"])
-
-                    StockMovement.objects.create(
-                        variant=item.variant,
-                        location=adjustment.location,
-                        movement_type=reversal_type,
-                        quantity=item.quantity,
-                        reference_type="stock_adjustment_reversal",
-                        reference_id=adjustment.id,
-                        note=f"Reversal of deleted adjustment {adjustment.reference_no}",
-                        created_by=request.user,
-                    )
+                        except InsufficientStockError as e:
+                            raise ValueError(
+                                f"Can't undo this adjustment -- {str(e)} "
+                                f"(less than the {item.quantity} this adjustment added)."
+                            )
 
                 adjustment.delete()
         except ValueError as e:
